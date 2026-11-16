@@ -145,7 +145,7 @@ function uploadImportFiles(inputSelector, statusSelector, onSuccess, buttonSelec
     }
     if (typeof onSuccess === "function") onSuccess(result);
   }).fail(xhr => {
-    const message = xhr.responseJSON?.error || (xhr.status ? "Upload failed (HTTP " + xhr.status + ")." : "Upload failed. Check that the PharmaSpot server is running."));
+    const message = xhr.responseJSON?.error || (xhr.status ? "Upload failed (HTTP " + xhr.status + ")." : "Upload failed. Check that the PharmaSpot server is running.");
     $(statusSelector).text(message);
   }).always(() => {
     button.prop("disabled", false).text(originalLabel);
