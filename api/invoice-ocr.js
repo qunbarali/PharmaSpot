@@ -28,23 +28,78 @@ function parseInvoiceText(raw) {
     warning: "OCR is a draft only. Verify supplier, invoice number, every quantity, price, batch and expiry date before posting." };
 }
 
+async function createOcrWorker() {
+  const Tesseract = optionalRequire("tesseract.js");
+  if (!Tesseract) throw new Error("OCR is unavailable. Install tesseract.js and restart PharmaSpot.");
+  const dataPackage = path.dirname(require.resolve("@tesseract.js-data/eng/package.json"));
+  return Tesseract.createWorker("eng", 1, { langPath: path.join(dataPackage, "4.0.0_best_int") });
+}
+
+async function extractScannedPdf(filePath) {
+  let pdfDocument;
+  let worker;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const { createCanvas } = require("@napi-rs/canvas");
+    const bytes = new Uint8Array(fs.readFileSync(filePath));
+    const loadingTask = pdfjs.getDocument({
+      data: bytes,
+      useSystemFonts: true,
+      disableFontFace: true,
+      isEvalSupported: false
+    });
+    pdfDocument = await loadingTask.promise;
+    if (!pdfDocument.numPages || pdfDocument.numPages > 30) throw new Error("Scanned PDF must contain between 1 and 30 pages.");
+    worker = await createOcrWorker();
+    const pageTexts = [];
+    for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+      const page = await pdfDocument.getPage(pageNumber);
+      const baseViewport = page.getViewport({ scale: 1 });
+      const basePixels = Math.max(1, baseViewport.width * baseViewport.height);
+      const scale = Math.min(2, Math.sqrt(12000000 / basePixels));
+      const viewport = page.getViewport({ scale: Math.max(0.5, scale) });
+      const width = Math.ceil(viewport.width);
+      const height = Math.ceil(viewport.height);
+      if (width * height > 12000000) throw new Error("A PDF page exceeds the safe OCR rendering size.");
+      const canvas = createCanvas(width, height);
+      const context = canvas.getContext("2d");
+      await page.render({ canvasContext: context, viewport }).promise;
+      const png = canvas.toBuffer("image/png");
+      const result = await worker.recognize(png);
+      const pageText = normalizeText(result && result.data && result.data.text);
+      if (pageText) pageTexts.push("[Page " + pageNumber + "]\n" + pageText);
+      canvas.width = 0;
+      canvas.height = 0;
+      page.cleanup();
+      if (pageTexts.join("\n").length > MAX_TEXT_CHARS) break;
+    }
+    const text = normalizeText(pageTexts.join("\n\n"));
+    if (!text) throw new Error("No readable text was detected in the scanned PDF. Try a clearer scan or upload page images.");
+    return text;
+  } catch (error) {
+    if (error && /between 1 and 30|safe OCR rendering size|No readable text/.test(error.message)) throw error;
+    throw new Error("Scanned-PDF OCR could not start. Check the PDF renderer, canvas and English OCR dependencies: " + (error.message || "unknown error"));
+  } finally {
+    if (worker) await worker.terminate();
+    if (pdfDocument) await pdfDocument.destroy();
+  }
+}
+
 async function extractPdf(filePath) {
   const pdfParse = optionalRequire("pdf-parse");
-  if (!pdfParse) throw new Error("PDF text extraction is unavailable. Install the optional pdf-parse dependency and restart PharmaSpot.");
+  if (!pdfParse) throw new Error("PDF text extraction is unavailable. Install pdf-parse and restart PharmaSpot.");
   const stat = fs.statSync(filePath);
   if (stat.size > 20 * 1024 * 1024) throw new Error("PDF exceeds the 20 MB processing limit.");
-  const parsed = await pdfParse(fs.readFileSync(filePath), { max: 30 });
+  const buffer = fs.readFileSync(filePath);
+  const parsed = await pdfParse(buffer, { max: 30 });
   const text = normalizeText(parsed.text);
-  if (!text) throw new Error("This PDF appears to be scanned or image-only. Upload its pages as JPG or PNG; direct scanned-PDF OCR is not yet supported.");
-  return text;
+  if (text.length >= 12) return text;
+  return extractScannedPdf(filePath);
 }
 async function extractImage(filePath) {
-  const Tesseract = optionalRequire("tesseract.js");
-  if (!Tesseract) throw new Error("Image OCR is unavailable. Install the optional tesseract.js dependency and restart PharmaSpot.");
   const stat = fs.statSync(filePath);
   if (stat.size > 20 * 1024 * 1024) throw new Error("Image exceeds the 20 MB processing limit.");
-  const dataPackage = path.dirname(require.resolve("@tesseract.js-data/eng/package.json"));
-  const worker = await Tesseract.createWorker("eng", 1, { langPath: path.join(dataPackage, "4.0.0_best_int") });
+  const worker = await createOcrWorker();
   try {
     const result = await worker.recognize(filePath);
     return normalizeText(result && result.data && result.data.text);
