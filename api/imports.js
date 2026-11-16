@@ -200,6 +200,7 @@ app.post("/commit-purchase", (req, res) => {
         baseCurrency,
         exchangeRate: rate,
         items: applied,
+        sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && /^[a-f0-9-]+\\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(file.storedName || "")).map(file => ({ originalName: String(file.originalName || "").slice(0, 200), storedName: file.storedName })) : [],
         createdAt: new Date().toISOString(),
         status: "posted",
       }, (saveError, record) => {
@@ -208,6 +209,14 @@ app.post("/commit-purchase", (req, res) => {
       });
     });
   });
+});
+
+app.get("/file/:storedName", (req, res) => {
+  const storedName = path.basename(String(req.params.storedName || ""));
+  if (!storedName || storedName !== req.params.storedName) return res.sendStatus(400);
+  const filePath = path.join(importRoot, storedName);
+  if (!fs.existsSync(filePath)) return res.sendStatus(404);
+  res.sendFile(filePath);
 });
 
 app.get("/history", (_req, res) => {
