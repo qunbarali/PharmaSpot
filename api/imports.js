@@ -39,6 +39,14 @@ const upload = multer({
 const cleanName = (value) => String(value || "").toLowerCase().replace(/\.[^.]+$/, "").replace(/[^a-z0-9]+/g, "");
 const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
+// Importing supplier documents and changing stock is restricted to the local app host.
+app.use((req, res, next) => {
+  const remote = String(req.socket && req.socket.remoteAddress || "");
+  const isLoopback = remote === "::1" || remote === "127.0.0.1" || remote.startsWith("::ffff:127.");
+  if (!isLoopback) return res.status(403).json({ error: "Document imports are available only on the main PharmaSpot computer." });
+  next();
+});
+
 app.get("/", (_req, res) => res.json({ module: "document-import", supported: Array.from(allowed) }));
 
 app.post("/upload", (req, res) => {
