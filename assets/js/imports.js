@@ -2,6 +2,7 @@ const $ = window.jQuery;
 const Store = require("electron-store");
 const store = new Store();
 const appSettings = store.get("settings") || {};
+const baseCurrency = appSettings.currencyCode || "PKR";
 const networkSettings = appSettings.app === "Network Point of Sale Terminal";
 const importApiHost = networkSettings ? (appSettings.ip || "localhost") : "localhost";
 const importApiPort = appSettings.port || process.env.PORT || "3210";
@@ -56,7 +57,11 @@ function uploadImportFiles(inputSelector, statusSelector, onSuccess) {
 }
 
 $(function () {
+  if (store.get("user") && Number(store.get("user").perm_products) === 0) $("#documentImportButton").hide();
   $("#documentImportButton").on("click", () => loadImportProducts(() => {}));
+  $("#importCurrency").on("change", function () {
+    if (this.value === baseCurrency) $("#importExchangeRate").val("1");
+  });
   $("#documentImportModal").on("shown.bs.modal", () => loadImportProducts(() => {
     if (!$("#purchaseImportTable tbody tr").length) addPurchaseRow();
   }));
@@ -96,6 +101,7 @@ $(function () {
         supplier: $("#importSupplier").val(),
         invoiceNo: $("#importInvoiceNo").val(),
         currency: $("#importCurrency").val(),
+        baseCurrency,
         exchangeRate: $("#importExchangeRate").val(),
         items
       }),
