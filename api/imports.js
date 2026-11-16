@@ -178,7 +178,7 @@ app.post("/commit-purchase", (req, res) => {
     let applied = [];
     const snapshots = [];
     const rollbackApplied = (done) => async.eachSeries(snapshots.slice().reverse(), (snapshot, next) => {
-      inventoryDB.update({ _id: snapshot._id }, snapshot, {}, next);
+      inventoryDB.update({ _id: snapshot.before._id, quantity: snapshot.after.quantity, batches: snapshot.after.batches }, snapshot.before, {}, next);
     }, done);
     async.eachSeries(rows, (row, next) => {
       const productId = Number(row.productId);
@@ -207,18 +207,21 @@ app.post("/commit-purchase", (req, res) => {
           invoiceNo,
           receivedAt: new Date().toISOString(),
         };
-        snapshots.push(JSON.parse(JSON.stringify(product)));
+        const snapshot = { before: JSON.parse(JSON.stringify(product)), after: null };
+        snapshots.push(snapshot);
         const batches = Array.isArray(product.batches) ? product.batches.concat([batch]) : [batch];
         const newQuantity = Number(product.quantity || 0) + quantity;
-        inventoryDB.update({ _id: productId }, { $set: {
+        const updateFields = {
           quantity: newQuantity,
           price: String(Number((salePrice * rate).toFixed(2))),
           supplier,
           purchasePrice: String(Number((purchasePrice * rate).toFixed(2))),
           expirationDate: expiryDate,
           batches,
-        } }, {}, (updateError, count) => {
-          if (updateError || !count) return next(updateError || new Error("Stock update failed."));
+        };
+        inventoryDB.update({ _id: productId, quantity: Number(product.quantity || 0) }, { $set: updateFields }, {}, (updateError, count) => {
+          if (updateError || !count) return next(updateError || new Error("Stock changed during purchase posting."));
+          snapshot.after = { ...JSON.parse(JSON.stringify(product)), ...updateFields };
           applied.push({ productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate });
           next();
         });
