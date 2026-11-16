@@ -153,8 +153,9 @@ app.post("/reconcile/commit", async (req, res) => {
     });
     const key = "reconcile:" + require("crypto").randomUUID();
     for (const plan of plans) {
-      const { result: count } = await call(inventoryDB, "update",
-        { _id: plan.productId, quantity: plan.systemQuantity, batches: plan.oldProduct.batches || [] },
+      const selector = { _id: plan.productId, quantity: plan.systemQuantity };
+      selector.batches = Array.isArray(plan.oldProduct.batches) ? plan.oldProduct.batches : { $exists: false };
+      const { result: count } = await call(inventoryDB, "update", selector,
         { $set: { quantity: plan.countedQuantity, batches: plan.nextProduct.batches || [] } }, {});
       if (!count) throw new Error("Stock changed during reconciliation. No further rows were applied.");
       updated.push(plan);
