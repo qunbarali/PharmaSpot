@@ -147,6 +147,12 @@ app.post("/post", function (req, res) {
             contact: validator.escape(req.body.contact),
             tax: validator.escape(req.body.tax),
             symbol: validator.escape(req.body.symbol),
+            currencyCode: ["PKR", "INR", "USD"].includes(String(req.body.currencyCode || "").toUpperCase()) ? String(req.body.currencyCode).toUpperCase() : "PKR",
+            exchangeRates: {
+                PKR: Number(req.body.rate_PKR || 1),
+                INR: Number(req.body.rate_INR || 0),
+                USD: Number(req.body.rate_USD || 0),
+            },
             percentage: validator.escape(req.body.percentage),
             charge_tax: req.body.charge_tax === 'on',
             quick_billing: req.body.quick_billing === 'on',
