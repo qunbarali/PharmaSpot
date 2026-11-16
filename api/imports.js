@@ -198,9 +198,19 @@ const postPurchaseHandler = (req, res) => {
     if (duplicate) return res.status(409).json({ error: "This supplier invoice has already been imported.", importId: duplicate._id });
     let applied = [];
     const snapshots = [];
-    const rollbackApplied = (done) => async.eachSeries(snapshots.slice().reverse(), (snapshot, next) => {
-      inventoryDB.update({ _id: snapshot.before._id, quantity: snapshot.after.quantity, batches: snapshot.after.batches }, snapshot.before, {}, next);
-    }, done);
+    const rollbackApplied = (done) => {
+      const rollbackErrors = [];
+      async.eachSeries(snapshots.slice().reverse(), (snapshot, next) => {
+        inventoryDB.update(
+          { _id: snapshot.before._id, quantity: snapshot.after.quantity, batches: snapshot.after.batches },
+          snapshot.before, {},
+          (rollbackError, count) => {
+            if (rollbackError || !count) rollbackErrors.push(rollbackError || new Error("Stock changed before rollback."));
+            next();
+          }
+        );
+      }, () => done(rollbackErrors.length ? rollbackErrors[0] : null));
+    };
     async.eachSeries(rows, (row, next) => {
       const productId = Number(row.productId);
       const quantity = Number(row.quantity);
