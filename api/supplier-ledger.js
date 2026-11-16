@@ -123,64 +123,88 @@ app.get("/expiry", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Could not calculate expiry alerts." }); }
 });
 
+const { buildReconciliationPreview, planProductReconciliation } = require("./reconciliation-utils");
+
 app.post("/reconcile/preview", async (req, res) => {
   try {
     const rows = Array.isArray(req.body && req.body.items) ? req.body.items : [];
-    if (!rows.length || rows.length > 1000) throw new Error("Provide between 1 and 1000 stock-count rows.");
-    const seen = new Set();
     const { result: products } = await call(inventoryDB, "find", {});
-    const byId = new Map(products.map(p => [String(p._id), p]));
-    const preview = rows.map(row => {
-      const id = String(row.productId || "");
-      if (seen.has(id)) throw new Error("Each product may appear only once in a reconciliation.");
-      seen.add(id);
-      const product = byId.get(id);
-      const counted = Number(row.countedQuantity);
-      if (!product || !Number.isFinite(counted) || counted < 0) throw new Error("A product is missing or a counted quantity is invalid.");
-      const current = Number(product.quantity || 0);
-      return { productId: product._id, productName: product.name, systemQuantity: current, countedQuantity: counted, variance: counted - current };
-    });
-    res.json({ preview, requiresApproval: true, note: "Preview only. No stock has changed." });
+    const preview = buildReconciliationPreview(products, rows);
+    res.json({ preview, requiresApproval: true, note: "Preview only. Every tracked batch and any unbatched stock must be counted separately. No stock has changed." });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 app.post("/reconcile/commit", async (req, res) => {
+  const updated = [];
   try {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required to adjust stock." });
     if (req.body && req.body.confirm !== true) throw new Error("Explicit confirmation is required.");
     const rows = Array.isArray(req.body && req.body.items) ? req.body.items : [];
     if (!rows.length || rows.length > 1000) throw new Error("Provide valid reconciliation rows.");
-    const key = "reconcile:" + require("crypto").randomUUID();
     const { result: products } = await call(inventoryDB, "find", {});
-    const byId = new Map(products.map(p => [String(p._id), p]));
-    const changes = [];
-    for (const row of rows) {
-      const product = byId.get(String(row.productId));
-      const counted = Number(row.countedQuantity);
-      if (!product || !Number.isFinite(counted) || counted < 0) throw new Error("Invalid product or counted quantity.");
-      const oldQuantity = Number(product.quantity || 0);
-      if (oldQuantity !== Number(row.systemQuantity)) throw new Error("Stock changed after preview. Generate a new preview.");
-      changes.push({ productId: product._id, oldQuantity, countedQuantity: counted, productSnapshot: product });
+    const preview = buildReconciliationPreview(products, rows.map(row => ({
+      productId: row.productId,
+      systemQuantity: row.systemQuantity,
+      untrackedSystemQuantity: row.untrackedSystemQuantity,
+      untrackedCount: row.untrackedCount,
+      batchCounts: (Array.isArray(row.batchCounts) ? row.batchCounts : []).map(batch => ({
+        batchIndex: batch.batchIndex, batchNumber: batch.batchNumber,
+        expiryDate: batch.expiryDate, systemQuantity: batch.systemQuantity,
+        countedQuantity: batch.countedQuantity
+      }))
+    })));
+    const byId = new Map(products.map(product => [String(product._id), product]));
+    const plans = preview.map(row => planProductReconciliation(byId.get(String(row.productId)), {
+      productId: row.productId,
+      systemQuantity: row.systemQuantity,
+      untrackedSystemQuantity: row.untrackedSystemQuantity,
+      untrackedCount: row.untrackedCount,
+      batchCounts: row.batchCounts
+    }));
+    const key = "reconcile:" + require("crypto").randomUUID();
+    for (const plan of plans) {
+      const { result: count } = await call(inventoryDB, "update",
+        { _id: plan.productId, quantity: plan.systemQuantity, batches: plan.oldProduct.batches || [] },
+        { $set: { quantity: plan.countedQuantity, batches: plan.nextProduct.batches || [] } }, {});
+      if (!count) throw new Error("Stock changed during reconciliation. No further rows were applied.");
+      updated.push(plan);
     }
-    const updated = [];
+    const record = await call(reconciliationDB, "insert", {
+      reconciliationKey: key,
+      changes: plans.map(plan => ({
+        productId: plan.productId, productName: plan.productName,
+        systemQuantity: plan.systemQuantity, countedQuantity: plan.countedQuantity,
+        variance: plan.variance, systemBatches: plan.systemBatches,
+        countedBatches: plan.countedBatches,
+        untrackedSystemQuantity: plan.oldUntracked, untrackedCount: plan.countedUntracked
+      })),
+      status: "posted", createdAt: new Date().toISOString()
+    });
     try {
-      for (const change of changes) {
-        const { result: count } = await call(inventoryDB, "update", { _id: change.productId, quantity: change.oldQuantity }, { $set: { quantity: change.countedQuantity } }, {});
-        if (!count) throw new Error("Concurrent stock change detected; reconciliation stopped.");
-        updated.push(change);
-      }
-      const record = await call(reconciliationDB, "insert", { reconciliationKey: key, changes, status: "posted", createdAt: new Date().toISOString() });
-      try { await writeAudit(req, "stock_reconciliation_posted", "reconciliation", record.result._id, { changedProducts: changes.map(change => ({ productId: change.productId, from: change.oldQuantity, to: change.countedQuantity })) }); }
-      catch (_) { return res.status(207).json({ success: true, reconciliationId: record.result._id, updated: updated.length, warning: "Stock adjustment saved but audit logging failed. Contact an administrator." }); }
-      res.json({ success: true, reconciliationId: record.result._id, updated: updated.length });
-    } catch (err) {
-      for (const change of updated.reverse()) {
-        await call(inventoryDB, "update", { _id: change.productId, quantity: change.countedQuantity }, { $set: { quantity: change.oldQuantity } }, {});
-      }
-      throw err;
+      await writeAudit(req, "stock_reconciliation_posted", "reconciliation", record.result._id, {
+        changedProducts: plans.map(plan => ({ productId: plan.productId, from: plan.systemQuantity, to: plan.countedQuantity }))
+      });
+    } catch (_) {
+      return res.status(207).json({ success: true, reconciliationId: record.result._id, updated: updated.length, warning: "Batch-aware stock adjustment saved but audit logging failed. Contact an administrator." });
     }
-  } catch (e) { res.status(409).json({ error: e.message, stockChanged: true }); }
+    return res.json({ success: true, reconciliationId: record.result._id, updated: updated.length });
+  } catch (e) {
+    let rollbackError = false;
+    for (const plan of updated.slice().reverse()) {
+      try {
+        const { result: count } = await call(inventoryDB, "update",
+          { _id: plan.productId, quantity: plan.countedQuantity, batches: plan.nextProduct.batches || [] },
+          { $set: { quantity: plan.systemQuantity, batches: plan.oldProduct.batches || [] } }, {});
+        if (!count) rollbackError = true;
+      } catch (_) { rollbackError = true; }
+    }
+    return res.status(409).json({
+      error: e.message,
+      rolledBack: !rollbackError,
+      rollbackError: rollbackError ? "A concurrent stock change prevented complete rollback; manual reconciliation is required." : undefined
+    });
+  }
 });
 
 app.get("/audit", async (req, res) => {
