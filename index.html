@@ -916,6 +916,8 @@
                             <div class="row m-t-15"><div class="col-sm-4"><label>Distributor</label><input id="distributorPaymentName" class="form-control" type="text"></div><div class="col-sm-3"><label>Amount</label><input id="distributorPaymentAmount" class="form-control" type="number" min="0.01" step="0.01"></div><div class="col-sm-2"><label>Currency</label><select id="distributorPaymentCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div><div class="col-sm-3"><label>Reference</label><input id="distributorPaymentReference" class="form-control" type="text"></div></div>
                             <button id="saveDistributorPayment" class="btn btn-success m-t-10" type="button">Record supplier payment</button>
                             <h4 class="m-t-20">Expiry alerts — next 90 days</h4><div id="batchExpiryAlerts"></div>
+                            <h4 class="m-t-20">Purchase history & controlled reversals</h4><div id="purchaseImportHistory"></div>
+                            <h4 class="m-t-20">Administrator audit trail</h4><button id="refreshAdminAudit" class="btn btn-default btn-sm" type="button">Refresh audit trail</button><div id="adminAuditTrail" class="m-t-10"></div>
                         </div>
                         <div id="reconciliationPane" class="tab-pane fade">
                             <p>Enter physical stock counts. Preview calculates differences without changing inventory. Confirm only after checking the preview.</p>
