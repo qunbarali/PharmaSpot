@@ -99,12 +99,14 @@ app.post("/payment", async (req, res) => {
 
 app.get("/ledger/:supplier", async (req, res) => {
   try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to view distributor ledger entries." });
     const supplier = await getSupplier(req.params.supplier, false);
     if (!supplier) return res.status(404).json({ error: "Distributor not found." });
     const { result } = await call(ledgerDB, "find", { supplierId: supplier._id });
     result.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     res.json(result);
-  } catch (e) { res.status(400).json({ error: "Could not load distributor ledger." }); }
+  } catch (e) { res.status(500).json({ error: "Could not load distributor ledger." }); }
 });
 
 app.get("/expiry", async (req, res) => {
