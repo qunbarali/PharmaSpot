@@ -100,10 +100,10 @@ app.post("/login", async function (req, res) {
     if (!username || !password) return res.status(400).json({ auth: false });
     usersDB.findOne({ username: validator.escape(username) }, async function (findError, docs) {
         if (findError) return res.status(500).json({ auth: false, message: "Could not verify login." });
-        if (!docs) return res.status(401).json({ auth: false });
+        if (!docs) return res.send({ auth: false });
         try {
             const valid = await bcrypt.compare(password, docs.password);
-            if (!valid) return res.status(401).json({ auth: false });
+            if (!valid) return res.send({ auth: false });
             await new Promise((resolve, reject) => usersDB.update(
                 { _id: docs._id },
                 { $set: { status: "Logged In_" + new Date().toISOString() } },
