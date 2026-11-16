@@ -184,6 +184,12 @@ $.fn.serializeObject = function () {
 
 auth = storage.get("auth");
 user = storage.get("user");
+$.ajaxSetup({
+  beforeSend: function (xhr) {
+    const currentUser = storage.get("user") || {};
+    if (currentUser.sessionToken) xhr.setRequestHeader("Authorization", "Bearer " + currentUser.sessionToken);
+  }
+});
 if (auth && auth.auth && (!user || !user.sessionToken || !user.sessionExpiresAt || !Number.isFinite(Date.parse(user.sessionExpiresAt)) || Date.parse(user.sessionExpiresAt) <= Date.now())) {
   storage.delete("auth");
   storage.delete("user");
