@@ -190,7 +190,7 @@ $(function () {
       window.alert("Complete every invoice line before posting stock.");
       return;
     }
-    if (!window.confirm("Post these purchase lines and increase stock? This action changes inventory.")) return;
+    if (!window.confirm("Submit this purchase as a draft for approval? Inventory will not change yet.")) return;
     $.ajax({
       url: importApi + "imports/commit-purchase",
       method: "POST",
@@ -205,10 +205,24 @@ $(function () {
         items
       }),
       success: result => {
-        window.alert("Purchase imported. " + result.appliedRows + " product line(s) added to stock.");
-        $("#purchaseImportTable tbody").empty();
-        $("#importSupplier,#importInvoiceNo").val("");
-        loadImportProducts(() => addPurchaseRow());
+        if (!result.draftId) return window.alert("Purchase draft was not created.");
+        if (!window.confirm("Review the supplier, invoice and all batch details. Approve this draft and post stock now?")) {
+          window.alert("Purchase saved as pending approval. No stock was changed.");
+          return;
+        }
+        $.ajax({
+          url: importApi + "imports/approve-purchase/" + encodeURIComponent(result.draftId),
+          method: "POST",
+          contentType: "application/json",
+          data: JSON.stringify({ confirm: true }),
+          success: posted => {
+            window.alert(posted.success ? "Purchase approved and posted. " + posted.appliedRows + " product line(s) added to stock." : "Purchase approval did not complete.");
+            $("#purchaseImportTable tbody").empty();
+            $("#importSupplier,#importInvoiceNo").val("");
+            loadImportProducts(() => addPurchaseRow());
+          },
+          error: xhr => window.alert(xhr.responseJSON?.error || "Could not approve purchase. Draft remains available for review.")
+        });
       },
       error: xhr => window.alert(xhr.responseJSON?.error || "Could not post this purchase.")
     });
