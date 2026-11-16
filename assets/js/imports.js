@@ -49,6 +49,13 @@ function runInvoiceOcr(files) {
         card.append($('<div class="panel-heading"></div>').text(file.originalName + " — OCR draft"));
         const body = $('<div class="panel-body"></div>');
         body.append($('<p></p>').text("Invoice number: " + (result.fields.invoiceNo || "Not detected") + " | Date: " + (result.fields.invoiceDate || "Not detected") + " | Currency: " + (result.fields.currency || "Not detected")));
+        if (result.fields.invoiceNo && !$("#importInvoiceNo").val()) $("#importInvoiceNo").val(result.fields.invoiceNo);
+        if (result.fields.currency && ["PKR", "INR", "USD"].includes(result.fields.currency) && !$("#importCurrency").data("user-selected")) $("#importCurrency").val(result.fields.currency).trigger("change");
+        if (result.rows && result.rows.length) {
+          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>OCR description</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody></tbody></table>');
+          result.rows.forEach(row => suggestions.find("tbody").append($("<tr></tr>").append($("<td></td>").text(row.description), $("<td></td>").text(row.quantity), $("<td></td>").text(row.unitPrice), $("<td></td>").text(row.lineTotal))));
+          body.append($('<p class="text-warning"></p>').text("Detected line suggestions only. Match each item to the correct medicine and verify batch, expiry and prices before approval."), suggestions);
+        }
         body.append($('<pre style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre>').text(result.text || "No readable text detected."));
         body.append($('<p class="text-warning"></p>').text(result.warning || "Verify all OCR values before posting."));
         card.append(body); panel.append(card);
