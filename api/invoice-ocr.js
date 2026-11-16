@@ -34,7 +34,9 @@ async function extractPdf(filePath) {
   const stat = fs.statSync(filePath);
   if (stat.size > 20 * 1024 * 1024) throw new Error("PDF exceeds the 20 MB processing limit.");
   const parsed = await pdfParse(fs.readFileSync(filePath), { max: 30 });
-  return normalizeText(parsed.text);
+  const text = normalizeText(parsed.text);
+  if (!text) throw new Error("This PDF appears to be scanned or image-only. Upload its pages as JPG or PNG; direct scanned-PDF OCR is not yet supported.");
+  return text;
 }
 async function extractImage(filePath) {
   const Tesseract = optionalRequire("tesseract.js");
