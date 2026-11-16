@@ -341,3 +341,7 @@ overflow-y:scroll
 .splash.hidden ~ .content.shown {
   display: block;
 }
+
+
+/* Document import */
+#importMatchResults .import-match{border:1px solid #ddd;border-radius:4px;padding:10px;margin:8px 0}#purchaseImportTable input,#purchaseImportTable select{min-width:90px}#documentImportModal .modal-dialog{width:94%;max-width:1100px}@media(max-width:767px){#documentImportModal .modal-dialog{width:auto;margin:10px}}
