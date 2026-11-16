@@ -7,6 +7,7 @@ const path = require("path");
 const crypto = require("crypto");
 const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
+const supplierLedger = require("./supplier-ledger");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -218,7 +219,7 @@ app.post("/commit-purchase", (req, res) => {
           batches,
         } }, {}, (updateError, count) => {
           if (updateError || !count) return next(updateError || new Error("Stock update failed."));
-          applied.push({ productId, quantity, batchNumber });
+          applied.push({ productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate });
           next();
         });
       });
@@ -237,7 +238,19 @@ app.post("/commit-purchase", (req, res) => {
         status: "posted",
       }, (saveError, record) => {
         if (saveError) return rollbackApplied((rollbackError) => res.status(500).json({ error: "Import history could not be saved; stock changes were rolled back.", rolledBack: !rollbackError, rollbackError: rollbackError ? "Stock rollback needs manual reconciliation." : undefined }));
-        res.json({ success: true, importId: record._id, appliedRows: applied.length });
+        const invoiceTotal = rows.reduce((sum, row) => sum + Number(row.quantity) * Number(row.purchasePrice), 0);
+        supplierLedger.getSupplier(supplier, true)
+          .then(distributor => supplierLedger.recordLedger({
+            supplier: distributor, type: "purchase", currency, amount: invoiceTotal,
+            reference: invoiceNo, importId: record._id, note: "Supplier invoice stock receipt",
+            eventKey: "purchase:" + record._id
+          }))
+          .then(() => res.json({ success: true, importId: record._id, appliedRows: applied.length, supplierLedger: "recorded" }))
+          .catch((ledgerError) => {
+            console.error("Supplier ledger write failed for import", record._id, ledgerError);
+            importsDB.update({ _id: record._id }, { $set: { supplierLedgerStatus: "needs_repair" } }, {}, () => {});
+            res.status(207).json({ success: true, importId: record._id, appliedRows: applied.length, supplierLedger: "needs_repair", warning: "Stock was posted, but distributor balance could not be updated. Review import history before paying this supplier." });
+          });
       });
     });
   });
