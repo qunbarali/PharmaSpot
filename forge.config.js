@@ -7,14 +7,9 @@ module.exports = {
   packagerConfig: {
     icon: 'assets/images/icon.ico', // Windows icon
     asar: {
-      unpack: [
-        "**/*.node",
-        "node_modules/tesseract.js/**",
-        "node_modules/tesseract.js-core/**",
-        "node_modules/@tesseract.js-data/eng/**",
-        "node_modules/@napi-rs/**",
-        "node_modules/pdfjs-dist/**"
-      ]
+      // @electron/asar expects one minimatch pattern string, not an array.
+      // Brace expansion keeps the native modules and offline OCR/PDF assets unpacked.
+      unpack: '**/{*.node,tesseract.js/**,tesseract.js-core/**,@tesseract.js-data/eng/**,@napi-rs/**,pdfjs-dist/**}'
     },
     ignore: [
       'gulpfile\\.js',
@@ -31,19 +26,16 @@ module.exports = {
     // Generic zip archive
     { name: '@electron-forge/maker-zip' },
 
-  // Windows
-  { name: '@electron-forge/maker-squirrel', config: {} },
-  { name: '@electron-forge/maker-wix', config: { language: 1033, manufacturer: pkg.author} },
-  // { name: '@electron-forge/maker-appx', config: {} },
+    // Windows
+    { name: '@electron-forge/maker-squirrel', config: {} },
+    { name: '@electron-forge/maker-wix', config: { language: 1033, manufacturer: pkg.author } },
 
-  // Linux
-  { name: '@electron-forge/maker-deb', config: {} },
-  { name: '@electron-forge/maker-rpm', config: {} },
-  // { name: '@electron-forge/maker-snap', config: {} },
+    // Linux
+    { name: '@electron-forge/maker-deb', config: {} },
+    { name: '@electron-forge/maker-rpm', config: {} },
 
-  // macOS
-  { name: '@electron-forge/maker-dmg', config: { format: 'ULFO' } },
-  // { name: '@electron-forge/maker-pkg', config: {} }
+    // macOS
+    { name: '@electron-forge/maker-dmg', config: { format: 'ULFO' } },
   ],
 
   publishers: [
