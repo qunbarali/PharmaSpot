@@ -61,6 +61,16 @@ jobs:
         run: npm ci
       - name: Verify installed dependency tree
         run: npm ls --depth=0
+      - name: Capture dependency vulnerability report
+        shell: pwsh
+        run: |
+          npm audit --json | Out-File -FilePath "npm-audit-report.json" -Encoding utf8
+          if (-not (Test-Path "npm-audit-report.json") -or (Get-Item "npm-audit-report.json").Length -eq 0) {
+            throw "npm audit did not produce a vulnerability report."
+          }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "npm audit found advisories; report will be uploaded for review."
+          }
       - name: Run automated tests
         env:
           NODE_OPTIONS: --experimental-vm-modules
@@ -90,3 +100,4 @@ jobs:
             package-lock.json
             out/**
             windows-build-sha256.txt
+            npm-audit-report.json
