@@ -13,10 +13,8 @@ const uploadsRoot = path.join(appData, appName, "uploads");
 const importRoot = path.join(uploadsRoot, "imports");
 fs.mkdirSync(importRoot, { recursive: true });
 
-const inventoryDB = new Datastore({
-  filename: path.join(appData, appName, "server", "databases", "inventory.db"),
-  autoload: true,
-});
+const inventoryAPI = require("./inventory");
+const inventoryDB = inventoryAPI.inventoryDB;
 const importsDB = new Datastore({
   filename: path.join(appData, appName, "server", "databases", "imports.db"),
   autoload: true,
@@ -62,10 +60,16 @@ app.post("/upload", (req, res) => {
         if (record.type === ".zip") {
           const directory = await unzipper.Open.file(file.path);
           const extracted = [];
+          let extractedBytes = 0;
+          let extractedCount = 0;
           for (const entry of directory.files) {
             if (entry.type !== "File") continue;
             const ext = path.extname(entry.path).toLowerCase();
             if (!imageExts.has(ext)) continue;
+            extractedCount += 1;
+            const declaredSize = Number(entry.vars && entry.vars.uncompressedSize || 0);
+            extractedBytes += declaredSize;
+            if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
             const base = path.basename(entry.path);
             if (!base || base.startsWith(".")) continue;
             const targetName = crypto.randomUUID() + ext;
