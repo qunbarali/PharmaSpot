@@ -319,6 +319,65 @@ app.post("/approve-purchase/:draftId", (req, res) => {
 
 
 
+
+app.post("/reverse-purchase/:importId", async (req, res) => {
+  if (!req.body || req.body.confirm !== true || !String(req.body.reason || "").trim()) return res.status(400).json({ error: "Explicit confirmation and a reversal reason are required." });
+  importsDB.findOne({ _id: req.params.importId, status: "posted" }, async (lookupError, record) => {
+    if (lookupError) return res.status(500).json({ error: "Could not load purchase record." });
+    if (!record) return res.status(404).json({ error: "Posted purchase not found or already reversed." });
+    const changes = [];
+    try {
+      const grouped = new Map();
+      for (const item of record.items || []) {
+        const key = String(item.productId) + "|" + String(item.batchNumber) + "|" + String(item.expiryDate);
+        const current = grouped.get(key) || { productId: item.productId, batchNumber: item.batchNumber, expiryDate: item.expiryDate, quantity: 0 };
+        current.quantity += Number(item.quantity);
+        grouped.set(key, current);
+      }
+      for (const item of grouped.values()) {
+        const { result: product } = await new Promise((resolve, reject) => inventoryDB.findOne({ _id: item.productId }, (err, doc) => err ? reject(err) : resolve({ result: doc })));
+        if (!product) throw new Error("A product from this invoice no longer exists; use stock reconciliation instead.");
+        const batches = Array.isArray(product.batches) ? product.batches : [];
+        const index = batches.findIndex(batch => String(batch.batchNumber) === String(item.batchNumber) && String(batch.expiryDate) === String(item.expiryDate));
+        if (index < 0 || Number(batches[index].quantity) !== item.quantity || Number(product.quantity || 0) < item.quantity) {
+          throw new Error("A purchased batch has changed or been sold. Automatic reversal is blocked to protect stock; use stock reconciliation.");
+        }
+        const before = JSON.parse(JSON.stringify(product));
+        const nextBatches = batches.slice(); nextBatches.splice(index, 1);
+        const nextQuantity = Number(product.quantity || 0) - item.quantity;
+        const { result: count } = await new Promise((resolve, reject) => inventoryDB.update(
+          { _id: product._id, quantity: Number(product.quantity || 0), batches },
+          { $set: { quantity: nextQuantity, batches: nextBatches } }, {}, (err, n) => err ? reject(err) : resolve({ result: n })
+        ));
+        if (!count) throw new Error("Stock changed during reversal; retry after refreshing inventory.");
+        changes.push({ productId: product._id, before, afterQuantity: nextQuantity, afterBatches: nextBatches });
+      }
+      const reversal = await supplierLedger.getSupplier(record.supplier, true).then(distributor => supplierLedger.recordLedger({
+        supplier: distributor, type: "purchase_reversal", currency: record.currency,
+        amount: (record.items || []).reduce((sum, item) => sum + Number(item.quantity) * Number(item.purchasePrice), 0),
+        reference: record.invoiceNo, importId: record._id, note: String(req.body.reason).slice(0, 300),
+        eventKey: "purchase-reversal:" + record._id
+      }));
+      importsDB.update({ _id: record._id, status: "posted" }, { $set: { status: "reversed", reversedAt: new Date().toISOString(), reversalReason: String(req.body.reason).slice(0, 300), reversalChanges: changes.map(change => ({ productId: change.productId, quantityBefore: change.before.quantity, quantityAfter: change.afterQuantity })) } }, {}, (saveError, count) => {
+        if (saveError || !count) return res.status(500).json({ error: "Stock reversal was applied but its import status could not be updated. Contact an administrator before further changes.", reversalLedgerId: reversal && reversal.eventKey });
+        res.json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length });
+      });
+    } catch (error) {
+      let rollbackError = null;
+      for (const change of changes.reverse()) {
+        try {
+          const { result: count } = await new Promise((resolve, reject) => inventoryDB.update(
+            { _id: change.productId, quantity: change.afterQuantity, batches: change.afterBatches },
+            change.before, {}, (err, n) => err ? reject(err) : resolve({ result: n })
+          ));
+          if (!count) rollbackError = new Error("Concurrent change prevented reversal rollback.");
+        } catch (e) { rollbackError = e; }
+      }
+      res.status(409).json({ error: error.message, rolledBack: !rollbackError, rollbackError: rollbackError ? "Manual stock reconciliation is required." : undefined });
+    }
+  });
+});
+
 app.get("/file/:storedName", (req, res) => {
   const storedName = path.basename(String(req.params.storedName || ""));
   if (!storedName || storedName !== req.params.storedName) return res.sendStatus(400);
