@@ -1,37 +1,86 @@
 const Datastore = require("@seald-io/nedb");
 const path = require("path");
-const dbPath = path.join(process.env.APPDATA, process.env.APPNAME, "server", "databases", "admin-audit.db");
-const auditDB = new Datastore({ filename: dbPath, autoload: true });
-const usersDB = new Datastore({ filename: path.join(process.env.APPDATA, process.env.APPNAME, "server", "databases", "users.db"), autoload: true });
+const crypto = require("crypto");
+const { hashSessionToken, readBearerToken, isSessionActive } = require("./session-utils");
+const dbDir = path.join(process.env.APPDATA, process.env.APPNAME, "server", "databases");
+const auditDB = new Datastore({ filename: path.join(dbDir, "admin-audit.db"), autoload: true });
+const usersDB = new Datastore({ filename: path.join(dbDir, "users.db"), autoload: true });
+const sessionsDB = new Datastore({ filename: path.join(dbDir, "user-sessions.db"), autoload: true });
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 auditDB.ensureIndex({ fieldName: "eventKey", unique: true, sparse: true });
+sessionsDB.ensureIndex({ fieldName: "tokenHash", unique: true });
 
-function writeAudit(req, action, entityType, entityId, details) {
+function issueSession(userId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  const session = {
+    tokenHash: hashSessionToken(token),
+    userId: Number(userId),
+    createdAt: new Date().toISOString(),
+    expiresAt
+  };
   return new Promise((resolve, reject) => {
-    const actor = String(req && req.headers && req.headers["x-pharmaspot-user"] || "local-session").slice(0, 120);
-    const event = {
-      eventKey: require("crypto").randomUUID(),
-      actor,
-      actorUserId: String(req && req.headers && req.headers["x-pharmaspot-user-id"] || "").slice(0, 40),
-      actorVerification: "local app user label; local API does not issue cryptographic sessions",
-      action: String(action).slice(0, 80),
-      entityType: String(entityType).slice(0, 80),
-      entityId: String(entityId || "").slice(0, 160),
-      details: details || {},
-      source: "PharmaSpot local API",
-      createdAt: new Date().toISOString()
-    };
-    auditDB.insert(event, (err, saved) => err ? reject(err) : resolve(saved));
+    sessionsDB.insert(session, error => error ? reject(error) : resolve({
+      token,
+      expiresAt: new Date(expiresAt).toISOString()
+    }));
   });
 }
-function authorizeAdmin(req) {
+
+function authenticateUser(req) {
+  const token = readBearerToken(req && req.headers);
+  if (!token) return Promise.resolve(null);
+  const tokenHash = hashSessionToken(token);
   return new Promise((resolve, reject) => {
-    const id = Number(req && req.headers && req.headers["x-pharmaspot-user-id"]);
-    if (!Number.isSafeInteger(id) || id <= 0) return resolve(null);
-    usersDB.findOne({ _id: id }, (err, user) => {
-      if (err) return reject(err);
-      if (!user || Number(user.perm_users) !== 1 || !String(user.status || "").startsWith("Logged In_")) return resolve(null);
-      resolve({ id: user._id, username: user.username });
+    sessionsDB.findOne({ tokenHash }, (sessionError, session) => {
+      if (sessionError) return reject(sessionError);
+      if (!isSessionActive(session)) {
+        if (session) sessionsDB.remove({ tokenHash }, {}, () => {});
+        return resolve(null);
+      }
+      usersDB.findOne({ _id: session.userId }, (userError, user) => {
+        if (userError) return reject(userError);
+        if (!user || !String(user.status || "").startsWith("Logged In_")) return resolve(null);
+        resolve(user);
+      });
     });
   });
 }
-module.exports = { auditDB, writeAudit, authorizeAdmin };
+
+function revokeSession(req) {
+  const token = readBearerToken(req && req.headers);
+  if (!token) return Promise.resolve(false);
+  return new Promise((resolve, reject) => {
+    sessionsDB.remove({ tokenHash: hashSessionToken(token) }, {}, (error, count) =>
+      error ? reject(error) : resolve(count > 0)
+    );
+  });
+}
+
+async function authorizeAdmin(req) {
+  const user = await authenticateUser(req);
+  if (!user || Number(user.perm_users) !== 1) return null;
+  return { id: user._id, username: user.username };
+}
+
+async function writeAudit(req, action, entityType, entityId, details) {
+  const user = await authenticateUser(req);
+  if (!user) throw new Error("A valid signed-in user session is required to write administrator audit events.");
+  const event = {
+    eventKey: crypto.randomUUID(),
+    actor: String(user.username || "unknown").slice(0, 120),
+    actorUserId: String(user._id || "").slice(0, 40),
+    actorVerification: "verified server-side bearer session",
+    action: String(action).slice(0, 80),
+    entityType: String(entityType).slice(0, 80),
+    entityId: String(entityId || "").slice(0, 160),
+    details: details || {},
+    source: "PharmaSpot local API",
+    createdAt: new Date().toISOString()
+  };
+  return new Promise((resolve, reject) => {
+    auditDB.insert(event, (error, saved) => error ? reject(error) : resolve(saved));
+  });
+}
+
+module.exports = { auditDB, usersDB, sessionsDB, issueSession, authenticateUser, revokeSession, writeAudit, authorizeAdmin };
