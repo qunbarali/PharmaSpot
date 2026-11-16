@@ -1,4 +1,4 @@
-const { findReversalBatchIndex, calculatePurchaseTotal, planPurchaseReversal } = require("./purchase-utils");
+const { findReversalBatchIndex, calculatePurchaseTotal, planPurchaseReversal, validatePurchaseDraft } = require("./purchase-utils");
 
 describe("purchase posting and reversal helpers", () => {
   test("targets an exact imported line even when batch labels are duplicated", () => {
@@ -56,6 +56,27 @@ describe("purchase posting and reversal helpers", () => {
   test("blocks reversal when a purchased batch quantity has changed", () => {
     const product = { _id: 7, quantity: 10, batches: [{ importLineId: "line-1", quantity: 1 }] };
     expect(() => planPurchaseReversal(product, { importLineId: "line-1", quantity: 2 })).toThrow(/changed or been sold/);
+  });
+
+  test("validates a purchase draft before it enters the approval queue", () => {
+    const draft = validatePurchaseDraft({
+      supplier: "Main Distributor", invoiceNo: "INV-100", currency: "PKR",
+      baseCurrency: "PKR", exchangeRate: 1,
+      items: [{ productId: 5, quantity: 10, purchasePrice: 12, salePrice: 15, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
+    });
+    expect(draft.items).toHaveLength(1);
+    expect(draft.currency).toBe("PKR");
+  });
+
+  test("rejects duplicate/invalid purchase fields and invalid exchange rates", () => {
+    const valid = {
+      supplier: "Main Distributor", invoiceNo: "INV-100", currency: "PKR",
+      baseCurrency: "PKR", exchangeRate: 1,
+      items: [{ productId: 5, quantity: 10, purchasePrice: 12, salePrice: 15, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
+    };
+    expect(() => validatePurchaseDraft({ ...valid, exchangeRate: 2 })).toThrow(/must be 1/i);
+    expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], quantity: -1 }] })).toThrow();
+    expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], productId: "x" }] })).toThrow(/valid product/i);
   });
 
 });
