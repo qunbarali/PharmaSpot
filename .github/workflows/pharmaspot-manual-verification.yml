@@ -20,11 +20,11 @@ jobs:
       - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
-          ref: feature/ocr-distributor-stock-reconciliation
+          ref: ${{ github.ref }}
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22.22.2"
           cache: npm
       - name: Enforce feature branch only
         shell: pwsh
@@ -36,12 +36,22 @@ jobs:
         shell: pwsh
         run: |
           git config user.name 'github-actions[bot]'
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure git author name." }
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure git author email." }
           git add package-lock.json
+          if ($LASTEXITCODE -ne 0) { throw "Could not stage package-lock.json." }
           git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
+          $diffExit = $LASTEXITCODE
+          if ($diffExit -eq 1) {
             git commit -m 'chore: regenerate package lock for invoice OCR'
+            if ($LASTEXITCODE -ne 0) { throw "Could not commit regenerated package-lock.json." }
             git push origin HEAD:feature/ocr-distributor-stock-reconciliation
+            if ($LASTEXITCODE -ne 0) { throw "Could not push regenerated lockfile to the feature branch." }
+          } elseif ($diffExit -ne 0) {
+            throw "Could not inspect staged package-lock.json changes."
+          } else {
+            Write-Host "package-lock.json is already up to date."
           }
       - name: Verify OCR dependencies are represented in the lockfile
         shell: pwsh
