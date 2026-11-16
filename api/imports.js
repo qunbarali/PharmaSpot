@@ -10,7 +10,7 @@ const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
 const { writeAudit, authorizeAdmin } = require("./audit");
-const { findReversalBatchIndex } = require("./purchase-utils");
+const { findReversalBatchIndex, calculatePurchaseTotal } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -264,7 +264,7 @@ const postPurchaseHandler = (req, res) => {
         status: "posted",
       }, (saveError, record) => {
         if (saveError) return rollbackApplied((rollbackError) => res.status(500).json({ error: "Import history could not be saved; stock changes were rolled back.", rolledBack: !rollbackError, rollbackError: rollbackError ? "Stock rollback needs manual reconciliation." : undefined }));
-        const invoiceTotal = rows.reduce((sum, row) => sum + Number(row.quantity) * Number(row.purchasePrice), 0);
+        const invoiceTotal = calculatePurchaseTotal(rows);
         supplierLedger.getSupplier(supplier, true)
           .then(distributor => supplierLedger.recordLedger({
             supplier: distributor, type: "purchase", currency, amount: invoiceTotal,
@@ -378,7 +378,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
       }
       const reversal = await supplierLedger.getSupplier(record.supplier, true).then(distributor => supplierLedger.recordLedger({
         supplier: distributor, type: "purchase_reversal", currency: record.currency,
-        amount: (record.items || []).reduce((sum, item) => sum + Number(item.quantity) * Number(item.purchasePrice), 0),
+        amount: calculatePurchaseTotal(record.items || []),
         reference: record.invoiceNo, importId: record._id, note: String(req.body.reason).slice(0, 300),
         eventKey: "purchase-reversal:" + record._id
       }));
