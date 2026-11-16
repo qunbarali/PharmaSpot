@@ -110,6 +110,40 @@ function previewReconciliation() {
       $("#commitReconciliation").prop("disabled", !result.preview || !result.preview.length);
     }).fail(xhr => $("#reconciliationPreview").text(xhr.responseJSON?.error || "Could not preview stock counts."));
 }
+function loadPurchaseImportHistory() {
+  $.getJSON(importApi + "imports/history").done(records => {
+    const list = $('<div class="list-group"></div>');
+    (records || []).filter(record => record.status === "posted" && record.type !== "purchase_draft").forEach(record => {
+      const item = $('<div class="list-group-item"></div>');
+      item.append($('<strong></strong>').text(record.supplier + " — invoice " + record.invoiceNo + " — " + record.status));
+      item.append($('<p class="small text-muted"></p>').text(new Date(record.createdAt).toLocaleString() + " | " + (record.items || []).length + " line(s)"));
+      const reverse = $('<button class="btn btn-warning btn-xs" type="button">Reverse purchase</button>');
+      reverse.prop("disabled", record.status !== "posted");
+      reverse.on("click", () => {
+        const reason = window.prompt("Enter the reason for reversing invoice " + record.invoiceNo + ". Reversal is blocked if any purchased batch has changed or been sold.");
+        if (!reason || !reason.trim()) return;
+        if (!window.confirm("Reverse this purchase and adjust stock and distributor balance?")) return;
+        $.ajax({ url: importApi + "imports/reverse-purchase/" + encodeURIComponent(record._id), method: "POST", contentType: "application/json", data: JSON.stringify({ confirm: true, reason }) })
+          .done(() => { window.alert("Purchase reversal completed."); loadPurchaseImportHistory(); loadDistributorAccounts(); loadAdminAuditTrail(); })
+          .fail(xhr => window.alert(xhr.responseJSON?.error || "Purchase reversal was blocked."));
+      });
+      item.append(reverse); list.append(item);
+    });
+    if (!list.children().length) list.text("No posted purchase invoices found.");
+    $("#purchaseImportHistory").empty().append(list);
+  }).fail(() => $("#purchaseImportHistory").text("Could not load purchase history."));
+}
+function loadAdminAuditTrail() {
+  $.getJSON(importApi + "supplier-ledger/audit").done(events => {
+    const list = $('<ul class="list-group"></ul>');
+    (events || []).forEach(event => {
+      const summary = event.action + " — " + event.entityType + " " + event.entityId + " — " + event.actor + " — " + new Date(event.createdAt).toLocaleString();
+      list.append($('<li class="list-group-item"></li>').text(summary));
+    });
+    if (!events || !events.length) list.append($('<li class="list-group-item"></li>').text("No audit events recorded."));
+    $("#adminAuditTrail").empty().append(list);
+  }).fail(xhr => $("#adminAuditTrail").text(xhr.status === 403 ? "Administrator account required to view this audit trail." : "Could not load audit trail."));
+}
 function loadDistributorAccounts() {
   $.getJSON(importApi + "supplier-ledger/suppliers").done(accounts => {
     const table = $('<table class="table table-bordered"><thead><tr><th>Distributor</th><th>Currency balances</th></tr></thead><tbody></tbody></table>');
@@ -127,9 +161,12 @@ function loadDistributorAccounts() {
   }).fail(() => $("#batchExpiryAlerts").text("Could not load expiry alerts."));
 }
 $(function () {
-  if (store.get("user") && Number(store.get("user").perm_products) === 0) $("#documentImportButton").hide();
+  const currentPharmaSpotUser = store.get("user") || {};
+  $.ajaxSetup({ headers: { "X-Pharmaspot-User": currentPharmaSpotUser.username || "local-session", "X-Pharmaspot-User-Id": String(currentPharmaSpotUser._id || "") } });
+  if (currentPharmaSpotUser && Number(currentPharmaSpotUser.perm_products) === 0) $("#documentImportButton").hide();
   $("#documentImportButton").on("click", () => loadImportProducts(() => {}));
   $("#refreshDistributorAccounts").on("click", loadDistributorAccounts);
+  $("#refreshAdminAudit").on("click", loadAdminAuditTrail);
   $("#addReconciliationRow").on("click", addReconciliationRow);
   $("#reconciliationTable").on("click", ".remove-reconciliation-row", function () { $(this).closest("tr").remove(); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
   $("#previewReconciliation").on("click", previewReconciliation);
@@ -142,7 +179,7 @@ $(function () {
       .done(result => { window.alert("Stock reconciliation saved. " + result.updated + " product(s) adjusted."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); $("#reconciliationPreview").empty(); $("#reconciliationTable tbody").empty(); loadReconciliationHistory(); })
       .fail(xhr => { window.alert(xhr.responseJSON?.error || "Reconciliation failed. Preview stock again."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
   });
-  $("#distributorPane").on("shown.bs.tab", loadDistributorAccounts);
+  $("#distributorPane").on("shown.bs.tab", function () { loadDistributorAccounts(); loadPurchaseImportHistory(); loadAdminAuditTrail(); });
   $("#saveDistributorPayment").on("click", function () {
     const payload = { supplier: $("#distributorPaymentName").val(), amount: $("#distributorPaymentAmount").val(), currency: $("#distributorPaymentCurrency").val(), reference: $("#distributorPaymentReference").val() };
     if (!payload.supplier || !(Number(payload.amount) > 0)) return window.alert("Enter a distributor and a valid payment amount.");
