@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const async = require("async");
+const { extractInvoice } = require("./invoice-ocr");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -119,6 +120,20 @@ app.post("/upload", (req, res) => {
   });
 });
 
+app.post("/ocr/:storedName", async (req, res) => {
+  const storedName = path.basename(String(req.params.storedName || ""));
+  if (!storedName || storedName !== req.params.storedName || !/^[a-f0-9-]+\.(pdf|jpg|jpeg|png|webp)$/i.test(storedName)) {
+    return res.status(400).json({ error: "Invalid staged invoice file." });
+  }
+  const filePath = path.join(importRoot, storedName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Staged invoice file not found." });
+  try {
+    const result = await extractInvoice(filePath);
+    res.json({ ...result, sourceFile: storedName });
+  } catch (error) {
+    res.status(503).json({ error: error.message || "Invoice OCR could not be completed." });
+  }
+});
 app.post("/assign-image", (req, res) => {
   const productId = Number(req.body.productId);
   const storedName = path.basename(String(req.body.storedName || ""));
