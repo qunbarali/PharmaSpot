@@ -264,8 +264,13 @@ function loadDistributorAccounts() {
 }
 $(function () {
   const currentPharmaSpotUser = store.get("user") || {};
+  const isPharmaSpotAdmin = Number(currentPharmaSpotUser.perm_users) === 1;
   $.ajaxSetup({ headers: { "X-Pharmaspot-User": currentPharmaSpotUser.username || "local-session", "X-Pharmaspot-User-Id": String(currentPharmaSpotUser._id || "") } });
   if (currentPharmaSpotUser && Number(currentPharmaSpotUser.perm_products) === 0) $("#documentImportButton").hide();
+  if (!isPharmaSpotAdmin) {
+    $("#postPurchaseImport").hide();
+    $("a[href=\"#distributorPane\"], a[href=\"#reconciliationPane\"]").closest("li").hide();
+  }
   $("#documentImportButton").on("click", () => loadImportProducts(() => {}));
   $("#refreshDistributorAccounts").on("click", loadDistributorAccounts);
   $("#refreshAdminAudit").on("click", loadAdminAuditTrail);
