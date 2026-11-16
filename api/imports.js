@@ -326,8 +326,11 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
         json(payload) {
           const finalStatus = payload && payload.success ? "posted" : "pending_approval";
           const finish = () => importsDB.update({ _id: draft._id }, { $set: { status: finalStatus, approvalResult: payload, processedAt: new Date().toISOString() } }, {}, () => res.json({ ...payload, draftId: draft._id }));
-          if (payload && payload.success) writeAudit(req, "purchase_approved_and_posted", "purchase_draft", draft._id, { importId: payload.importId, appliedRows: payload.appliedRows }).then(finish).catch(() => res.status(500).json({ error: "Purchase posted but audit write failed. Review stock and import history." }));
-          else finish();
+          if (payload && payload.success) {
+            writeAudit(req, "purchase_approved_and_posted", "purchase_draft", draft._id, { importId: payload.importId, appliedRows: payload.appliedRows })
+              .then(finish)
+              .catch(() => importsDB.update({ _id: draft._id }, { $set: { status: "posted", approvalResult: payload, auditWarning: true, processedAt: new Date().toISOString() } }, {}, () => res.status(207).json({ ...payload, draftId: draft._id, warning: "Purchase posted; audit write failed. Review administrator audit history." })));
+          } else finish();
           return this;
         }
       };
