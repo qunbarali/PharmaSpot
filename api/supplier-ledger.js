@@ -21,11 +21,6 @@ const call = (db, method, ...args) => new Promise((resolve, reject) => {
   db[method](...args, (err, result, extra) => err ? reject(err) : resolve({ result, extra }));
 });
 const clean = value => String(value == null ? "" : value).trim().slice(0, 160);
-const money = value => {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error("Amounts must be finite non-negative numbers.");
-  return Number(n.toFixed(2));
-};
 const localOnly = (req, res, next) => {
   const remote = String(req.socket && req.socket.remoteAddress || "");
   if (!(remote === "::1" || remote === "127.0.0.1" || remote.startsWith("::ffff:127."))) {
