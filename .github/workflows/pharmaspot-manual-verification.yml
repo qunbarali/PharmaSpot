@@ -62,6 +62,8 @@ jobs:
       - name: Verify installed dependency tree
         run: npm ls --depth=0
       - name: Run automated tests
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
         run: npm test -- --runInBand
       - name: Build Windows installers
         if: inputs.package_windows
