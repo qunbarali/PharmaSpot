@@ -1,6 +1,7 @@
 const express = require("express");
 const Datastore = require("@seald-io/nedb");
 const path = require("path");
+const { writeAudit, auditDB, authorizeAdmin } = require("./audit");
 
 const app = express();
 const appData = process.env.APPDATA;
@@ -96,6 +97,7 @@ app.post("/payment", async (req, res) => {
       reference: req.body.reference, note: req.body.note,
       eventKey: "payment:" + require("crypto").randomUUID()
     });
+    await writeAudit(req, "supplier_payment_recorded", "supplier", supplier._id, { currency, amount, reference: payment.reference, ledgerEvent: payment.eventKey });
     res.status(201).json({ success: true, payment });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -176,6 +178,7 @@ app.post("/reconcile/commit", async (req, res) => {
         updated.push(change);
       }
       const record = await call(reconciliationDB, "insert", { reconciliationKey: key, changes, status: "posted", createdAt: new Date().toISOString() });
+      await writeAudit(req, "stock_reconciliation_posted", "reconciliation", record.result._id, { changedProducts: changes.map(change => ({ productId: change.productId, from: change.oldQuantity, to: change.countedQuantity })) });
       res.json({ success: true, reconciliationId: record.result._id, updated: updated.length });
     } catch (err) {
       for (const change of updated.reverse()) {
@@ -186,6 +189,15 @@ app.post("/reconcile/commit", async (req, res) => {
   } catch (e) { res.status(409).json({ error: e.message, stockChanged: true }); }
 });
 
+app.get("/audit", async (req, res) => {
+  try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to view the audit log." });
+    const { result } = await call(auditDB, "find", {});
+    result.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    res.json(result.slice(0, 500));
+  } catch (e) { res.status(500).json({ error: "Could not load administrator audit history." }); }
+});
 app.get("/reconcile/history", async (_req, res) => {
   try {
     const { result } = await call(reconciliationDB, "find", {});
