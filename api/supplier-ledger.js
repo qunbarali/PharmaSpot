@@ -88,6 +88,8 @@ app.post("/suppliers", async (req, res) => {
 
 app.post("/payment", async (req, res) => {
   try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to record supplier payments." });
     const supplier = await getSupplier(req.body && req.body.supplier, true);
     const currency = String(req.body.currency || "PKR").toUpperCase();
     const amount = money(req.body.amount);
@@ -155,6 +157,8 @@ app.post("/reconcile/preview", async (req, res) => {
 
 app.post("/reconcile/commit", async (req, res) => {
   try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to adjust stock." });
     if (req.body && req.body.confirm !== true) throw new Error("Explicit confirmation is required.");
     const rows = Array.isArray(req.body && req.body.items) ? req.body.items : [];
     if (!rows.length || rows.length > 1000) throw new Error("Provide valid reconciliation rows.");
