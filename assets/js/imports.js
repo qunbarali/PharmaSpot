@@ -235,8 +235,12 @@ function loadAdminAuditTrail() {
   $.getJSON(importApi + "supplier-ledger/audit").done(events => {
     const list = $('<ul class="list-group"></ul>');
     (events || []).forEach(event => {
+      const item = $('<li class="list-group-item"></li>');
       const summary = event.action + " — " + event.entityType + " " + event.entityId + " — " + event.actor + " — " + new Date(event.createdAt).toLocaleString();
-      list.append($('<li class="list-group-item"></li>').text(summary));
+      item.append($('<strong></strong>').text(summary));
+      if (event.details && Object.keys(event.details).length) item.append($('<pre class="m-t-10"></pre>').text(JSON.stringify(event.details, null, 2)));
+      if (event.actorVerification) item.append($('<small class="text-muted"></small>').text(event.actorVerification));
+      list.append(item);
     });
     if (!events || !events.length) list.append($('<li class="list-group-item"></li>').text("No audit events recorded."));
     $("#adminAuditTrail").empty().append(list);
