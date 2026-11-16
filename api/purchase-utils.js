@@ -43,4 +43,32 @@ function planPurchaseReversal(product, item) {
   };
 }
 
-module.exports = { findReversalBatchIndex, calculatePurchaseTotal, planPurchaseReversal };
+
+function validatePurchaseDraft(input) {
+  const supplier = String(input && input.supplier || "").trim();
+  const invoiceNo = String(input && input.invoiceNo || "").trim();
+  const currency = String(input && input.currency || "").toUpperCase();
+  const baseCurrency = String(input && input.baseCurrency || "PKR").toUpperCase();
+  const exchangeRate = Number(input && input.exchangeRate == null ? 1 : input.exchangeRate);
+  const items = Array.isArray(input && input.items) ? input.items : [];
+  if (!supplier || !invoiceNo) throw new Error("Supplier and invoice number are required.");
+  if (!["PKR", "INR", "USD"].includes(currency) || !["PKR", "INR", "USD"].includes(baseCurrency)) {
+    throw new Error("Invoice and store currencies must be PKR, INR or USD.");
+  }
+  if (!Number.isFinite(exchangeRate) || exchangeRate <= 0 || (currency === baseCurrency && exchangeRate !== 1)) {
+    throw new Error("Enter a positive exchange rate; it must be 1 when invoice and store currencies match.");
+  }
+  if (!items.length || items.length > 500) throw new Error("A purchase must contain between 1 and 500 invoice lines.");
+  calculatePurchaseTotal(items);
+  for (const item of items) {
+    const productId = Number(item.productId);
+    const salePrice = Number(item.salePrice);
+    if (!Number.isSafeInteger(productId) || productId <= 0 || !Number.isFinite(salePrice) || salePrice < 0 ||
+        !String(item.batchNumber || "").trim() || !String(item.expiryDate || "").trim()) {
+      throw new Error("Every invoice line needs a valid product, sale price, batch number and expiry date.");
+    }
+  }
+  return { supplier, invoiceNo, currency, baseCurrency, exchangeRate, items };
+}
+
+module.exports = { findReversalBatchIndex, calculatePurchaseTotal, planPurchaseReversal, validatePurchaseDraft };
