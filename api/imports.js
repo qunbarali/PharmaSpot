@@ -140,7 +140,9 @@ app.post("/commit-purchase", (req, res) => {
     return res.status(400).json({ error: "Supplier, invoice number, supported currency and at least one line item are required." });
   }
   const rate = Number(body.exchangeRate || 1);
-  if (!Number.isFinite(rate) || rate <= 0) return res.status(400).json({ error: "Exchange rate must be greater than zero." });
+  const baseCurrency = String(body.baseCurrency || "PKR").toUpperCase();
+  if (!["PKR", "INR", "USD"].includes(baseCurrency) || !Number.isFinite(rate) || rate <= 0) return res.status(400).json({ error: "A supported base currency and a positive exchange rate are required." });
+  if (currency === baseCurrency && rate !== 1) return res.status(400).json({ error: "Exchange rate must be 1 when invoice and store currencies are the same." });
   const importKey = supplier.toLowerCase() + "|" + invoiceNo.toLowerCase();
   importsDB.findOne({ importKey }, (lookupError, duplicate) => {
     if (lookupError) return res.status(500).json({ error: "Could not check duplicate invoices." });
@@ -164,6 +166,9 @@ app.post("/commit-purchase", (req, res) => {
           quantity,
           purchasePrice,
           salePrice,
+          baseCurrency,
+          basePurchasePrice: Number((purchasePrice * rate).toFixed(4)),
+          baseSalePrice: Number((salePrice * rate).toFixed(4)),
           currency,
           exchangeRate: rate,
           supplier,
@@ -174,9 +179,9 @@ app.post("/commit-purchase", (req, res) => {
         const newQuantity = Number(product.quantity || 0) + quantity;
         inventoryDB.update({ _id: productId }, { $set: {
           quantity: newQuantity,
-          price: String(salePrice),
+          price: String(Number((salePrice * rate).toFixed(2))),
           supplier,
-          purchasePrice: String(purchasePrice),
+          purchasePrice: String(Number((purchasePrice * rate).toFixed(2))),
           expirationDate: expiryDate,
           batches,
         } }, {}, (updateError, count) => {
@@ -192,6 +197,7 @@ app.post("/commit-purchase", (req, res) => {
         supplier,
         invoiceNo,
         currency,
+        baseCurrency,
         exchangeRate: rate,
         items: applied,
         createdAt: new Date().toISOString(),
