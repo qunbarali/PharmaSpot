@@ -176,7 +176,7 @@ app.post("/assign-image", (req, res) => {
   });
 });
 
-app.post("/commit-purchase", (req, res) => {
+const postPurchaseHandler = (req, res) => {
   const body = req.body || {};
   const supplier = String(body.supplier || "").trim();
   const invoiceNo = String(body.invoiceNo || "").trim();
@@ -276,7 +276,48 @@ app.post("/commit-purchase", (req, res) => {
       });
     });
   });
+};
+
+
+app.post("/commit-purchase", (req, res) => {
+  const body = req.body || {};
+  const supplier = String(body.supplier || "").trim();
+  const invoiceNo = String(body.invoiceNo || "").trim();
+  const rows = Array.isArray(body.items) ? body.items : [];
+  if (!supplier || !invoiceNo || !rows.length) return res.status(400).json({ error: "Supplier, invoice number and line items are required for review." });
+  importsDB.insert({
+    type: "purchase_draft", status: "pending_approval", supplier, invoiceNo,
+    currency: String(body.currency || "").toUpperCase(), baseCurrency: String(body.baseCurrency || "PKR").toUpperCase(),
+    exchangeRate: Number(body.exchangeRate || 1), items: rows,
+    sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles : [],
+    createdAt: new Date().toISOString()
+  }, (err, draft) => {
+    if (err) return res.status(500).json({ error: "Could not save purchase for approval." });
+    res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." });
+  });
 });
+
+app.post("/approve-purchase/:draftId", (req, res) => {
+  if (!req.body || req.body.confirm !== true) return res.status(400).json({ error: "Explicit approval confirmation is required." });
+  importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" }, (err, draft) => {
+    if (err) return res.status(500).json({ error: "Could not load purchase draft." });
+    if (!draft) return res.status(404).json({ error: "Pending purchase draft not found or already processed." });
+    importsDB.update({ _id: draft._id, status: "pending_approval" }, { $set: { status: "approving", approvedAt: new Date().toISOString() } }, {}, (updateError, count) => {
+      if (updateError || !count) return res.status(409).json({ error: "This draft is already being processed." });
+      const response = {
+        status(code) { res.status(code); return this; },
+        json(payload) {
+          const finalStatus = payload && payload.success ? "posted" : "pending_approval";
+          importsDB.update({ _id: draft._id }, { $set: { status: finalStatus, approvalResult: payload, processedAt: new Date().toISOString() } }, {}, () => res.json({ ...payload, draftId: draft._id }));
+          return this;
+        }
+      };
+      postPurchaseHandler({ body: draft }, response);
+    });
+  });
+});
+
+
 
 app.get("/file/:storedName", (req, res) => {
   const storedName = path.basename(String(req.params.storedName || ""));
