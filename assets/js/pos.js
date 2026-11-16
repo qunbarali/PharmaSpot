@@ -210,6 +210,19 @@ if (auth == undefined) {
 
   $.get(api + "settings/get", function (data) {
     settings = data.settings;
+    const currency = settings && settings.currencyCode ? settings.currencyCode : "PKR";
+    const locale = { PKR: "en-PK", INR: "en-IN", USD: "en-US" }[currency] || "en-PK";
+    process.env.PHARMA_CURRENCY_LOCALE = locale;
+    const symbol = { PKR: "Rs", INR: "₹", USD: "$" }[currency] || settings.symbol || "Rs";
+    if (settings) settings.symbol = symbol;
+    $("#currencyCode").val(currency);
+    $("#symbol").val(symbol);
+    if (settings && settings.exchangeRates) {
+      $("#rate_PKR").val(settings.exchangeRates.PKR || 1);
+      $("#rate_INR").val(settings.exchangeRates.INR || 0);
+      $("#rate_USD").val(settings.exchangeRates.USD || 0);
+    }
+    $("#price_curr, #payment_curr, #change_curr").text(symbol);
   });
 
   $.get(api + "users/all", function (users) {
@@ -1841,6 +1854,9 @@ if (auth == undefined) {
       const appChoice = $("#app").find("option:selected").text();
     
       formData["app"] = appChoice;
+      const currencySymbols = { PKR: "Rs", INR: "₹", USD: "$" };
+      formData["symbol"] = currencySymbols[formData.currencyCode] || "Rs";
+      process.env.PHARMA_CURRENCY_LOCALE = { PKR: "en-PK", INR: "en-IN", USD: "en-US" }[formData.currencyCode] || "en-PK";
       formData["mac"] = mac_address;
       formData["till"] = 1;
 
