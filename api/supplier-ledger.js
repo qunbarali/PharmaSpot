@@ -87,7 +87,8 @@ app.post("/payment", async (req, res) => {
       reference: req.body.reference, note: req.body.note,
       eventKey: "payment:" + require("crypto").randomUUID()
     });
-    await writeAudit(req, "supplier_payment_recorded", "supplier", supplier._id, { currency, amount, reference: payment.reference, ledgerEvent: payment.eventKey });
+    try { await writeAudit(req, "supplier_payment_recorded", "supplier", supplier._id, { currency, amount, reference: payment.reference, ledgerEvent: payment.eventKey }); }
+    catch (_) { return res.status(207).json({ success: true, payment, warning: "Payment recorded but audit logging failed. Contact an administrator." }); }
     res.status(201).json({ success: true, payment });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -170,7 +171,8 @@ app.post("/reconcile/commit", async (req, res) => {
         updated.push(change);
       }
       const record = await call(reconciliationDB, "insert", { reconciliationKey: key, changes, status: "posted", createdAt: new Date().toISOString() });
-      await writeAudit(req, "stock_reconciliation_posted", "reconciliation", record.result._id, { changedProducts: changes.map(change => ({ productId: change.productId, from: change.oldQuantity, to: change.countedQuantity })) });
+      try { await writeAudit(req, "stock_reconciliation_posted", "reconciliation", record.result._id, { changedProducts: changes.map(change => ({ productId: change.productId, from: change.oldQuantity, to: change.countedQuantity })) }); }
+      catch (_) { return res.status(207).json({ success: true, reconciliationId: record.result._id, updated: updated.length, warning: "Stock adjustment saved but audit logging failed. Contact an administrator." }); }
       res.json({ success: true, reconciliationId: record.result._id, updated: updated.length });
     } catch (err) {
       for (const change of updated.reverse()) {
