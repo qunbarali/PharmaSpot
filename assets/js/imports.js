@@ -140,12 +140,13 @@ function loadPendingPurchaseDrafts() {
 function loadPurchaseImportHistory() {
   $.getJSON(importApi + "imports/history").done(records => {
     const list = $('<div class="list-group"></div>');
-    (records || []).filter(record => record.status === "posted" && record.type !== "purchase_draft").forEach(record => {
+    (records || []).filter(record => ["posted", "reversed"].includes(record.status) && record.type !== "purchase_draft").forEach(record => {
       const item = $('<div class="list-group-item"></div>');
       item.append($('<strong></strong>').text(record.supplier + " — invoice " + record.invoiceNo + " — " + record.status));
       item.append($('<p class="small text-muted"></p>').text(new Date(record.createdAt).toLocaleString() + " | " + (record.items || []).length + " line(s)"));
       const reverse = $('<button class="btn btn-warning btn-xs" type="button">Reverse purchase</button>');
       reverse.prop("disabled", record.status !== "posted");
+      if (record.status === "reversed") reverse.text("Already reversed");
       reverse.on("click", () => {
         const reason = window.prompt("Enter the reason for reversing invoice " + record.invoiceNo + ". Reversal is blocked if any purchased batch has changed or been sold.");
         if (!reason || !reason.trim()) return;
