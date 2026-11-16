@@ -132,7 +132,7 @@ app.post("/upload", (req, res) => {
         files: files.map(({ path: _path, ...file }) => file),
         imageSuggestions,
         invoiceReviewRequired: files.some(file => file.type === ".pdf" || imageExts.has(file.type)),
-        note: "Files are staged only. Review invoice line items and image matches before applying changes. PDF/image OCR is not enabled in this build.",
+        note: "Files are staged only. Review invoice line items and image matches before applying changes. OCR drafts are available for supported PDFs and images. Verify every field against the original invoice before approval.",
       });
     } catch (err) {
       console.error("Import upload failed:", err);
