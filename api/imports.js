@@ -354,12 +354,35 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
         status(code) { res.status(code); return this; },
         json(payload) {
           const finalStatus = payload && payload.success ? "posted" : payload && payload.rolledBack === false ? "approval_needs_reconciliation" : "pending_approval";
-          const finish = () => importsDB.update({ _id: draft._id }, { $set: { status: finalStatus, approvalResult: payload, processedAt: new Date().toISOString() } }, {}, () => res.json({ ...payload, draftId: draft._id }));
+          const persistResult = (status, result, warning) => {
+            importsDB.update(
+              { _id: draft._id, status: "approving" },
+              { $set: { status, approvalResult: result, processedAt: new Date().toISOString(), ...(warning ? { approvalWarning: warning } : {}) } },
+              {},
+              (saveError, count) => {
+                if (saveError || !count) {
+                  console.error("Could not persist purchase approval outcome", draft._id, saveError || "Draft status changed before finalization.");
+                  return res.status(207).json({
+                    ...result,
+                    draftId: draft._id,
+                    warning: warning || "Purchase processing finished, but its approval status could not be saved. Check import history and stock before taking further action."
+                  });
+                }
+                if (warning) return res.status(207).json({ ...result, draftId: draft._id, warning });
+                return res.json({ ...result, draftId: draft._id });
+              }
+            );
+          };
           if (payload && payload.success) {
             writeAudit(req, "purchase_approved_and_posted", "purchase_draft", draft._id, { importId: payload.importId, appliedRows: payload.appliedRows })
-              .then(finish)
-              .catch(() => importsDB.update({ _id: draft._id }, { $set: { status: "posted", approvalResult: payload, auditWarning: true, processedAt: new Date().toISOString() } }, {}, () => res.status(207).json({ ...payload, draftId: draft._id, warning: "Purchase posted; audit write failed. Review administrator audit history." })));
-          } else finish();
+              .then(() => persistResult(finalStatus, payload))
+              .catch((auditError) => {
+                console.error("Purchase posted but approval audit failed", draft._id, auditError);
+                persistResult("posted", payload, "Purchase posted, but audit logging failed. Review administrator audit history before relying on this transaction.");
+              });
+          } else {
+            persistResult(finalStatus, payload);
+          }
           return this;
         }
       };
