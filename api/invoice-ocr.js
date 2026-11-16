@@ -41,9 +41,14 @@ async function extractScannedPdf(filePath) {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const { createCanvas } = require("@napi-rs/canvas");
+    const pdfjsBuildDir = path.dirname(require.resolve("pdfjs-dist/legacy/build/pdf.mjs"));
+    const assetPath = (...segments) => path.join(pdfjsBuildDir, "..", "..", ...segments) + path.sep;
     const bytes = new Uint8Array(fs.readFileSync(filePath));
     const loadingTask = pdfjs.getDocument({
       data: bytes,
+      cMapUrl: assetPath("cmaps"),
+      cMapPacked: true,
+      standardFontDataUrl: assetPath("standard_fonts"),
       useSystemFonts: true,
       disableFontFace: true,
       isEvalSupported: false
