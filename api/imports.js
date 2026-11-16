@@ -10,7 +10,7 @@ const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
 const { writeAudit, authorizeAdmin } = require("./audit");
-const { findReversalBatchIndex, calculatePurchaseTotal } = require("./purchase-utils");
+const { planPurchaseReversal, calculatePurchaseTotal } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -389,27 +389,15 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
       for (const item of (record.items || []).slice().reverse()) {
         const { result: product } = await new Promise((resolve, reject) => inventoryDB.findOne({ _id: item.productId }, (err, doc) => err ? reject(err) : resolve({ result: doc })));
         if (!product) throw new Error("A product from this invoice no longer exists; use stock reconciliation instead.");
-        const batches = Array.isArray(product.batches) ? product.batches : [];
-        const index = findReversalBatchIndex(batches, item);
-        const quantity = Number(item.quantity);
-        if (index < 0 || Number(batches[index].quantity) !== quantity || Number(product.quantity || 0) < quantity) {
-          throw new Error("A purchased batch has changed or been sold. Automatic reversal is blocked to protect stock; use stock reconciliation.");
-        }
+        const plan = planPurchaseReversal(product, item);
         const before = JSON.parse(JSON.stringify(product));
-        const nextBatches = batches.slice();
-        nextBatches.splice(index, 1);
-        const nextQuantity = Number(product.quantity || 0) - quantity;
-        const postedFields = item.postedProductFields;
-        const metadataStillMatchesPurchase = postedFields && Object.keys(postedFields).every(key =>
-          String(product[key] ?? "") === String(postedFields[key] ?? "")
-        );
-        const restoreFields = metadataStillMatchesPurchase ? (item.previousProductFields || {}) : {};
+        const batches = Array.isArray(product.batches) ? product.batches : [];
         const { result: count } = await new Promise((resolve, reject) => inventoryDB.update(
           { _id: product._id, quantity: Number(product.quantity || 0), batches },
-          { $set: { quantity: nextQuantity, batches: nextBatches, ...restoreFields } }, {}, (err, n) => err ? reject(err) : resolve({ result: n })
+          { $set: { quantity: plan.nextQuantity, batches: plan.nextBatches, ...plan.restoreFields } }, {}, (err, n) => err ? reject(err) : resolve({ result: n })
         ));
         if (!count) throw new Error("Stock changed during reversal; retry after refreshing inventory.");
-        changes.push({ productId: product._id, before, afterQuantity: nextQuantity, afterBatches: nextBatches });
+        changes.push({ productId: product._id, before, afterQuantity: plan.nextQuantity, afterBatches: plan.nextBatches });
       }
       const reversal = await supplierLedger.getSupplier(record.supplier, true).then(distributor => supplierLedger.recordLedger({
         supplier: distributor, type: "purchase_reversal", currency: record.currency,
