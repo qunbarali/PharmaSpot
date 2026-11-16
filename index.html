@@ -889,7 +889,7 @@
             <div class="modal-dialog modal-lg"><div class="modal-content">
                 <div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button><h4 class="modal-title" id="documentImportTitle">Document & Product Import</h4></div>
                 <div class="modal-body">
-                    <ul class="nav nav-tabs"><li class="active"><a data-toggle="tab" href="#invoiceImportPane">Supplier invoices</a></li><li><a data-toggle="tab" href="#imageImportPane">Product pictures</a></li></ul>
+                    <ul class="nav nav-tabs"><li class="active"><a data-toggle="tab" href="#invoiceImportPane">Supplier invoices</a></li><li><a data-toggle="tab" href="#imageImportPane">Product pictures</a></li><li><a data-toggle="tab" href="#distributorPane">Distributors & expiry</a></li></ul>
                     <div class="tab-content" style="padding-top:15px">
                         <div id="invoiceImportPane" class="tab-pane fade in active">
                             <p>Upload supplier invoices (PDF, JPG, PNG) or a ZIP containing documents. Enter or verify extracted line details below before posting stock.</p>
@@ -908,6 +908,20 @@
                             <input id="productImageFiles" type="file" class="form-control" multiple accept=".jpg,.jpeg,.png,.webp,.zip">
                             <button id="uploadProductImages" class="btn btn-primary m-t-10" type="button">Upload and match pictures</button>
                             <div id="imageMatchResults" class="m-t-15"></div>
+                        <div id="distributorPane" class="tab-pane fade">
+                            <p>Distributor balances are tracked separately by currency. Record payments against the correct distributor and review upcoming batch expiries.</p>
+                            <button id="refreshDistributorAccounts" class="btn btn-primary" type="button">Refresh accounts</button>
+                            <div id="distributorAccounts" class="m-t-15"></div>
+                            <div class="row m-t-15">
+                                <div class="col-sm-4"><label>Distributor</label><input id="distributorPaymentName" class="form-control" type="text"></div>
+                                <div class="col-sm-3"><label>Amount</label><input id="distributorPaymentAmount" class="form-control" type="number" min="0.01" step="0.01"></div>
+                                <div class="col-sm-2"><label>Currency</label><select id="distributorPaymentCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div>
+                                <div class="col-sm-3"><label>Reference</label><input id="distributorPaymentReference" class="form-control" type="text"></div>
+                            </div>
+                            <button id="saveDistributorPayment" class="btn btn-success m-t-10" type="button">Record supplier payment</button>
+                            <h4 class="m-t-20">Expiry alerts — next 90 days</h4>
+                            <div id="batchExpiryAlerts"></div>
+                        </div>
                         </div>
                     </div>
                 </div>
