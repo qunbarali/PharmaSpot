@@ -5,6 +5,7 @@ const unzipper = require("unzipper");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { Transform } = require("stream");
 const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
@@ -78,19 +79,37 @@ app.post("/upload", (req, res) => {
             if (!imageExts.has(ext)) continue;
             extractedCount += 1;
             const declaredSize = Number(entry.vars && entry.vars.uncompressedSize || 0);
-            extractedBytes += declaredSize;
-            if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
-            const base = path.basename(entry.path);
+            if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes + declaredSize > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
+            const normalizedEntry = String(entry.path || "").replace(/\\\\/g, "/");
+            const safeEntryPath = path.posix.normalize(normalizedEntry);
+            if (!normalizedEntry || normalizedEntry.startsWith("/") || safeEntryPath === ".." || safeEntryPath.startsWith("../")) throw new Error("ZIP archive contains an unsafe file path.");
+            const base = path.posix.basename(safeEntryPath);
             if (!base || base.startsWith(".")) continue;
             const targetName = crypto.randomUUID() + ext;
             const targetPath = path.join(importRoot, targetName);
+            let actualBytes = 0;
             await new Promise((resolve, reject) => {
               const output = fs.createWriteStream(targetPath, { flags: "wx" });
-              entry.on("error", reject);
-              output.on("error", reject);
+              const limiter = new Transform({
+                transform(chunk, encoding, callback) {
+                  actualBytes += chunk.length;
+                  if (actualBytes > 10 * 1024 * 1024 || extractedBytes + actualBytes > 50 * 1024 * 1024) return callback(new Error("ZIP archive exceeds safe extraction limits."));
+                  callback(null, chunk);
+                }
+              });
+              const fail = error => { output.destroy(); fs.unlink(targetPath, () => reject(error)); };
+              entry.on("error", fail);
+              limiter.on("error", fail);
+              output.on("error", fail);
               output.on("finish", resolve);
-              entry.pipe(output);
+              entry.pipe(limiter).pipe(output);
             });
+            extractedBytes += actualBytes;
+            const signature = fs.readFileSync(targetPath).subarray(0, 12);
+            const validImage = (ext === ".jpg" || ext === ".jpeg") ? signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff
+              : ext === ".png" ? signature.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+              : ext === ".webp" ? signature.toString("ascii", 0, 4) === "RIFF" && signature.toString("ascii", 8, 12) === "WEBP" : false;
+            if (!validImage) { fs.unlinkSync(targetPath); continue; }
             extracted.push({ originalName: base, storedName: targetName, suggestedName: cleanName(base) });
           }
           record.extractedImages = extracted;
