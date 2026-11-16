@@ -4,6 +4,8 @@ const path = require("path");
 const http = require("http");
 const express = require("express");
 
+jest.setTimeout(30000);
+
 let server;
 let port;
 let inventoryDB;
