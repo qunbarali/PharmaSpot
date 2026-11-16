@@ -26,6 +26,13 @@ let usersDB = new Datastore({
 
 usersDB.ensureIndex({ fieldName: "username", unique: true });
 
+function publicUser(user) {
+    if (!user) return user;
+    const safe = { ...user };
+    delete safe.password;
+    return safe;
+}
+
 /**
  * GET endpoint: Get the welcome message for the Users API.
  *
@@ -53,7 +60,7 @@ app.get("/user/:userId", function (req, res) {
                 _id: parseInt(req.params.userId),
             },
             function (err, docs) {
-                res.send(docs);
+                res.send(publicUser(docs));
             },
         );
     }
@@ -122,7 +129,7 @@ app.post("/login", async function (req, res) {
  */
 app.get("/all", function (req, res) {
     usersDB.find({}, function (err, docs) {
-        res.send(docs);
+        res.send((docs || []).map(publicUser));
     });
 });
 
@@ -203,7 +210,7 @@ app.post("/post", function (req, res) {
                         });
                     }
                     else {
-                        res.send( user);
+                        res.send(publicUser(user));
                     }
                 });
             } else {
