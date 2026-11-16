@@ -1,0 +1,25 @@
+# Registration copy for GitHub workflow_dispatch discovery.
+# When dispatching this workflow, select the feature branch to run its
+# full verification implementation from that branch.
+name: PharmaSpot manual verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_windows:
+        description: Build the Windows desktop package
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  registration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select the feature branch for full verification
+        run: |
+          echo "Select feature/ocr-distributor-stock-reconciliation in the Run workflow branch selector."
+          echo "The feature branch contains the full Windows verification workflow."
