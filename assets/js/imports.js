@@ -75,9 +75,35 @@ function uploadImportFiles(inputSelector, statusSelector, onSuccess) {
   });
 }
 
+function loadDistributorAccounts() {
+  $.getJSON(importApi + "supplier-ledger/suppliers").done(accounts => {
+    const table = $('<table class="table table-bordered"><thead><tr><th>Distributor</th><th>Currency balances</th></tr></thead><tbody></tbody></table>');
+    (accounts || []).forEach(account => {
+      const balances = Object.entries(account.balances || {}).map(([currency, value]) => currency + ": " + Number(value.balance || 0).toFixed(2)).join(" | ") || "No activity";
+      table.find("tbody").append($('<tr></tr>').append($('<td></td>').text(account.name), $('<td></td>').text(balances)));
+    });
+    $("#distributorAccounts").empty().append(table);
+  }).fail(() => $("#distributorAccounts").text("Could not load distributor accounts."));
+  $.getJSON(importApi + "supplier-ledger/expiry?days=90").done(alerts => {
+    const list = $('<ul class="list-group"></ul>');
+    (alerts || []).forEach(item => list.append($('<li class="list-group-item"></li>').text(item.productName + " — batch " + item.batchNumber + " — " + item.expiryDate + " — qty " + item.quantity + (item.expired ? " (EXPIRED)" : ""))));
+    if (!alerts || !alerts.length) list.append($('<li class="list-group-item"></li>').text("No batches expiring within 90 days."));
+    $("#batchExpiryAlerts").empty().append(list);
+  }).fail(() => $("#batchExpiryAlerts").text("Could not load expiry alerts."));
+}
 $(function () {
   if (store.get("user") && Number(store.get("user").perm_products) === 0) $("#documentImportButton").hide();
   $("#documentImportButton").on("click", () => loadImportProducts(() => {}));
+  $("#refreshDistributorAccounts").on("click", loadDistributorAccounts);
+  $("#distributorPane").on("shown.bs.tab", loadDistributorAccounts);
+  $("#saveDistributorPayment").on("click", function () {
+    const payload = { supplier: $("#distributorPaymentName").val(), amount: $("#distributorPaymentAmount").val(), currency: $("#distributorPaymentCurrency").val(), reference: $("#distributorPaymentReference").val() };
+    if (!payload.supplier || !(Number(payload.amount) > 0)) return window.alert("Enter a distributor and a valid payment amount.");
+    if (!window.confirm("Record this payment in the distributor ledger?")) return;
+    $.ajax({ url: importApi + "supplier-ledger/payment", method: "POST", contentType: "application/json", data: JSON.stringify(payload) })
+      .done(() => { window.alert("Distributor payment recorded."); $("#distributorPaymentAmount,#distributorPaymentReference").val(""); loadDistributorAccounts(); })
+      .fail(xhr => window.alert(xhr.responseJSON?.error || "Could not record payment."));
+  });
   $("#importCurrency").on("change", function () {
     if (this.value === baseCurrency) { $("#importExchangeRate").val("1"); return; }
     const configuredForeignPerBase = Number((appSettings.exchangeRates || {})[this.value] || 0);
