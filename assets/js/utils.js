@@ -4,8 +4,9 @@ let moment = require("moment");
 const DATE_FORMAT = "DD-MMM-YYYY";
 const PORT = process.env.PORT;
 let path = require("path");
-const moneyFormat = (amount, locale = "en-US") => {
-  return new Intl.NumberFormat(locale).format(amount);
+const moneyFormat = (amount, locale = process.env.PHARMA_CURRENCY_LOCALE || "en-PK") => {
+  const numericAmount = Number(amount);
+  return new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number.isFinite(numericAmount) ? numericAmount : 0);
 };
 
 /** Date functions **/
