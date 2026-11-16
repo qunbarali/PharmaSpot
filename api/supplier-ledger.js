@@ -54,8 +54,10 @@ async function recordLedger({ supplier, type, currency, amount, reference, impor
   return entry;
 }
 
-app.get("/suppliers", async (_req, res) => {
+app.get("/suppliers", async (req, res) => {
   try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to view distributor balances." });
     const { result: suppliers } = await call(supplierDB, "find", {});
     const { result: entries } = await call(ledgerDB, "find", {});
     const result = suppliers.map(s => {
@@ -69,6 +71,8 @@ app.get("/suppliers", async (_req, res) => {
 
 app.post("/suppliers", async (req, res) => {
   try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to create distributor accounts." });
     const supplier = await getSupplier(req.body && req.body.name, true);
     res.status(201).json({ id: supplier._id, name: supplier.name });
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -206,8 +210,10 @@ app.get("/audit", async (req, res) => {
     res.json(result.slice(0, 500));
   } catch (e) { res.status(500).json({ error: "Could not load administrator audit history." }); }
 });
-app.get("/reconcile/history", async (_req, res) => {
+app.get("/reconcile/history", async (req, res) => {
   try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to view stock reconciliation history." });
     const { result } = await call(reconciliationDB, "find", {});
     result.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     res.json(result.slice(0, 100));
