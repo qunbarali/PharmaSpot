@@ -6,7 +6,16 @@ const pkg = require("./package.json");
 module.exports = {
   packagerConfig: {
     icon: 'assets/images/icon.ico', // Windows icon
-    asar: true,
+    asar: {
+      unpack: [
+        "**/*.node",
+        "node_modules/tesseract.js/**",
+        "node_modules/tesseract.js-core/**",
+        "node_modules/@tesseract.js-data/eng/**",
+        "node_modules/@napi-rs/**",
+        "node_modules/pdfjs-dist/legacy/build/**"
+      ]
+    },
     ignore: [
       'gulpfile\\.js',
       '\\.git.*',
