@@ -147,7 +147,7 @@ app.post("/post", function (req, res) {
             contact: validator.escape(req.body.contact),
             tax: validator.escape(req.body.tax),
             symbol: validator.escape(req.body.symbol),
-            currencyCode: ["PKR", "INR", "USD"].includes(String(req.body.currencyCode || "").toUpperCase()) ? String(req.body.currencyCode).toUpperCase() : "PKR",
+            currencyCode: ["PKR", "INR", "USD"].includes(String(req.body.currencyCode || "").toUpperCase()) ? String(req.body.currencyCode).toUpperCase() : (["USD", "$"].includes(String(req.body.symbol || "").trim().toUpperCase()) ? "USD" : (["INR", "₹"].includes(String(req.body.symbol || "").trim().toUpperCase()) ? "INR" : "PKR")),
             exchangeRates: {
                 PKR: Number(req.body.rate_PKR || 1),
                 INR: Number(req.body.rate_INR || 0),
