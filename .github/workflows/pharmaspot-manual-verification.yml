@@ -1,0 +1,44 @@
+name: PharmaSpot manual verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_windows:
+        description: Build the Windows desktop package
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Regenerate package lock
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run automated tests
+        run: npm test -- --runInBand
+      - name: Build Windows package
+        if: inputs.package_windows
+        run: npm run package
+      - name: Upload verification outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmaspot-verification-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            package-lock.json
+            out/**
