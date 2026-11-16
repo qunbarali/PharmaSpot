@@ -243,10 +243,10 @@ const postPurchaseHandler = (req, res) => {
         const snapshot = { before: JSON.parse(JSON.stringify(product)), after: null };
         snapshots.push(snapshot);
         const previousProductFields = {
-          price: product.price,
-          supplier: product.supplier,
-          purchasePrice: product.purchasePrice,
-          expirationDate: product.expirationDate
+          price: product.price ?? null,
+          supplier: product.supplier ?? null,
+          purchasePrice: product.purchasePrice ?? null,
+          expirationDate: product.expirationDate ?? null
         };
         const batches = Array.isArray(product.batches) ? product.batches.concat([batch]) : [batch];
         const newQuantity = Number(product.quantity || 0) + quantity;
@@ -263,7 +263,7 @@ const postPurchaseHandler = (req, res) => {
         inventoryDB.update(selector, { $set: updateFields }, {}, (updateError, count) => {
           if (updateError || !count) { snapshots.pop(); return next(updateError || new Error("Stock changed during purchase posting.")); }
           snapshot.after = { ...JSON.parse(JSON.stringify(product)), ...updateFields };
-          applied.push({ importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate, previousProductFields });
+          applied.push({ importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate, previousProductFields, postedProductFields: { price: updateFields.price, supplier: updateFields.supplier, purchasePrice: updateFields.purchasePrice, expirationDate: updateFields.expirationDate } });
           next();
         });
       });
@@ -399,13 +399,11 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
         const nextBatches = batches.slice();
         nextBatches.splice(index, 1);
         const nextQuantity = Number(product.quantity || 0) - quantity;
-        const remainingLatestBatch = nextBatches.length ? nextBatches[nextBatches.length - 1] : null;
-        const restoreFields = item.previousProductFields || (remainingLatestBatch ? {
-          price: remainingLatestBatch.baseSalePrice,
-          supplier: remainingLatestBatch.supplier,
-          purchasePrice: remainingLatestBatch.basePurchasePrice,
-          expirationDate: remainingLatestBatch.expiryDate
-        } : {});
+        const postedFields = item.postedProductFields;
+        const metadataStillMatchesPurchase = postedFields && Object.keys(postedFields).every(key =>
+          String(product[key] ?? "") === String(postedFields[key] ?? "")
+        );
+        const restoreFields = metadataStillMatchesPurchase ? (item.previousProductFields || {}) : {};
         const { result: count } = await new Promise((resolve, reject) => inventoryDB.update(
           { _id: product._id, quantity: Number(product.quantity || 0), batches },
           { $set: { quantity: nextQuantity, batches: nextBatches, ...restoreFields } }, {}, (err, n) => err ? reject(err) : resolve({ result: n })
