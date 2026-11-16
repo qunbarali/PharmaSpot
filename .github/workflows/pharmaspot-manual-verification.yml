@@ -32,6 +32,17 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne "feature/ocr-distributor-stock-reconciliation") { throw "Run this workflow only on feature/ocr-distributor-stock-reconciliation." }
       - name: Regenerate package lock
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Apply non-breaking dependency security fixes
+        shell: pwsh
+        run: |
+          cmd /c "npm audit fix --package-lock-only --ignore-scripts --no-fund"
+          $fixExitCode = $LASTEXITCODE
+          if ($fixExitCode -ne 0) {
+            Write-Host "Some advisories remain or could not be fixed without breaking changes (exit code $fixExitCode). Continuing with compatible fixes only."
+          } else {
+            Write-Host "Applied available non-breaking dependency security fixes."
+          }
+          $global:LASTEXITCODE = 0
       - name: Commit regenerated package lock to this feature branch
         shell: pwsh
         run: |
