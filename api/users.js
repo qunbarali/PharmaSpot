@@ -6,6 +6,7 @@ const bcrypt = require("bcrypt");
 const saltRounds = 10;
 const validator = require("validator");
 const path = require("path");
+const { issueSession, authenticateUser, revokeSession } = require("./audit");
 const dbPath = path.join(
     process.env.APPDATA,
     process.env.APPNAME,
@@ -65,69 +66,51 @@ app.get("/user/:userId", function (req, res) {
  * @param {Object} res response object.
  * @returns {void}
  */
-app.get("/logout/:userId", function (req, res) {
-    if (!req.params.userId) {
-        res.status(500).send("ID field is required.");
-    } else {
+app.get("/logout/:userId", async function (req, res) {
+    try {
+        const authenticated = await authenticateUser(req);
+        if (!authenticated || String(authenticated._id) !== String(req.params.userId)) {
+            return res.status(401).json({ error: "A valid session for this user is required to log out." });
+        }
+        await revokeSession(req);
         usersDB.update(
-            {
-                _id: parseInt(req.params.userId),
-            },
-            {
-                $set: {
-                    status: "Logged Out_" + new Date(),
-                },
-            },
+            { _id: authenticated._id },
+            { $set: { status: "Logged Out_" + new Date().toISOString() } },
             {},
+            (error) => error ? res.status(500).json({ error: "Could not complete logout." }) : res.sendStatus(200)
         );
-
-        res.sendStatus(200);
+    } catch (_) {
+        res.status(500).json({ error: "Could not complete logout." });
     }
 });
 
 /**
- * POST endpoint: Authenticate user login and update user status.
- *
- * @param {Object} req request object with login credentials in the body.
- * @param {Object} res response object.
- * @returns {void}
+ * POST endpoint: Authenticate user credentials and issue an expiring session token.
  */
-app.post("/login", function (req, res) {
-    usersDB.findOne(
-        {
-            username: validator.escape(req.body.username),
-        },
-        function (err, docs) {
-            if (docs) {
-                //verify password
-                bcrypt
-                    .compare(req.body.password, docs.password)
-                    .then((result) => {
-                        if (result) {
-                            usersDB.update(
-                                {
-                                    _id: docs._id,
-                                },
-                                {
-                                    $set: {
-                                        status: "Logged In_" + new Date(),
-                                    },
-                                },
-                                {},
-                            );
-                            res.send({ ...docs, auth: true });
-                        }
-                        //Invalid password
-                        else res.send({ auth: false });
-                    })
-                    .catch((err) =>
-                        res.send({ auth: false, message: err.message }),
-                    );
-            }
-            //No user Account
-            else res.send({ auth: false });
-        },
-    );
+app.post("/login", async function (req, res) {
+    const username = String(req.body && req.body.username || "");
+    const password = String(req.body && req.body.password || "");
+    if (!username || !password) return res.status(400).json({ auth: false });
+    usersDB.findOne({ username: validator.escape(username) }, async function (findError, docs) {
+        if (findError) return res.status(500).json({ auth: false, message: "Could not verify login." });
+        if (!docs) return res.status(401).json({ auth: false });
+        try {
+            const valid = await bcrypt.compare(password, docs.password);
+            if (!valid) return res.status(401).json({ auth: false });
+            await new Promise((resolve, reject) => usersDB.update(
+                { _id: docs._id },
+                { $set: { status: "Logged In_" + new Date().toISOString() } },
+                {},
+                error => error ? reject(error) : resolve()
+            ));
+            const session = await issueSession(docs._id);
+            const safeUser = { ...docs };
+            delete safeUser.password;
+            res.send({ ...safeUser, auth: true, sessionToken: session.token, sessionExpiresAt: session.expiresAt });
+        } catch (_) {
+            res.status(500).json({ auth: false, message: "Could not create a secure login session." });
+        }
+    });
 });
 
 /**
