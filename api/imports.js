@@ -9,6 +9,7 @@ const { Transform } = require("stream");
 const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
+const { writeAudit } = require("./audit");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -293,7 +294,9 @@ app.post("/commit-purchase", (req, res) => {
     createdAt: new Date().toISOString()
   }, (err, draft) => {
     if (err) return res.status(500).json({ error: "Could not save purchase for approval." });
-    res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." });
+    writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, { supplier, invoiceNo, lineCount: rows.length })
+      .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." }))
+      .catch(() => res.status(500).json({ error: "Purchase draft saved but audit record failed. Contact an administrator before approval." }));
   });
 });
 
@@ -308,7 +311,9 @@ app.post("/approve-purchase/:draftId", (req, res) => {
         status(code) { res.status(code); return this; },
         json(payload) {
           const finalStatus = payload && payload.success ? "posted" : "pending_approval";
-          importsDB.update({ _id: draft._id }, { $set: { status: finalStatus, approvalResult: payload, processedAt: new Date().toISOString() } }, {}, () => res.json({ ...payload, draftId: draft._id }));
+          const finish = () => importsDB.update({ _id: draft._id }, { $set: { status: finalStatus, approvalResult: payload, processedAt: new Date().toISOString() } }, {}, () => res.json({ ...payload, draftId: draft._id }));
+          if (payload && payload.success) writeAudit(req, "purchase_approved_and_posted", "purchase_draft", draft._id, { importId: payload.importId, appliedRows: payload.appliedRows }).then(finish).catch(() => res.status(500).json({ error: "Purchase posted but audit write failed. Review stock and import history." }));
+          else finish();
           return this;
         }
       };
@@ -360,7 +365,9 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
       }));
       importsDB.update({ _id: record._id, status: "posted" }, { $set: { status: "reversed", reversedAt: new Date().toISOString(), reversalReason: String(req.body.reason).slice(0, 300), reversalChanges: changes.map(change => ({ productId: change.productId, quantityBefore: change.before.quantity, quantityAfter: change.afterQuantity })) } }, {}, (saveError, count) => {
         if (saveError || !count) return res.status(500).json({ error: "Stock reversal was applied but its import status could not be updated. Contact an administrator before further changes.", reversalLedgerId: reversal && reversal.eventKey });
-        res.json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length });
+        writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), adjustedProducts: changes.length })
+          .then(() => res.json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length }))
+          .catch(() => res.status(500).json({ error: "Purchase reversal completed but audit logging failed. Contact an administrator." }));
       });
     } catch (error) {
       let rollbackError = null;
