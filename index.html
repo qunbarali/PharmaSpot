@@ -49,6 +49,7 @@
                                 <i class="fa fa-plus"></i>
                             </button>
                         </div>
+                        <button id="documentImportButton" type="button" class="btn btn-info waves-effect waves-light" data-toggle="modal" data-target="#documentImportModal"><i class="fa fa-file-import"></i> Import Documents</button>
                         <button id="viewRefOrders" data-toggle="modal" data-target="#holdOrdersModal" type="button" class="btn btn-info waves-effect waves-light">
                             <span class="btn-label"><i class="fa fa-shopping-basket"></i> </span> Open Tabs
                         </button>
@@ -832,7 +833,13 @@
                                     <div class="col-md-6">
                                         <div class="form-group">
                                             <label for="userName">Currency Symbol</label>
-                                            <input type="text" required="required" name="symbol" class="form-control" id="symbol" minlength="1" maxlength="3" placeholder="USD">
+                                            <select name="currencyCode" id="currencyCode" class="form-control"><option value="PKR">PKR — Pakistani Rupee (Rs)</option><option value="INR">INR — Indian Rupee (₹)</option><option value="USD">USD — US Dollar ($)</option></select>
+                                            <input type="hidden" name="symbol" id="symbol" value="Rs">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Exchange rates (1 base currency = foreign currency)</label>
+                                            <div class="row"><div class="col-xs-4"><label>PKR</label><input class="form-control" type="number" min="0" step="0.000001" name="rate_PKR" id="rate_PKR" value="1"></div><div class="col-xs-4"><label>INR</label><input class="form-control" type="number" min="0" step="0.000001" name="rate_INR" id="rate_INR" value="0"></div><div class="col-xs-4"><label>USD</label><input class="form-control" type="number" min="0" step="0.000001" name="rate_USD" id="rate_USD" value="0"></div></div>
+                                            <small class="text-muted">Enter rates manually. Rates are saved with new imports; historical records are not recalculated.</small>
                                         </div>
                                         <div class="form-group">
                                             <label for="userName">Vat Percentage</label>
@@ -878,6 +885,34 @@
             </div>
         </div>
     </div>
+        <div id="documentImportModal" class="modal fade" tabindex="-1" role="dialog" aria-labelledby="documentImportTitle" aria-hidden="true">
+            <div class="modal-dialog modal-lg"><div class="modal-content">
+                <div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button><h4 class="modal-title" id="documentImportTitle">Document & Product Import</h4></div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs"><li class="active"><a data-toggle="tab" href="#invoiceImportPane">Supplier invoices</a></li><li><a data-toggle="tab" href="#imageImportPane">Product pictures</a></li></ul>
+                    <div class="tab-content" style="padding-top:15px">
+                        <div id="invoiceImportPane" class="tab-pane fade in active">
+                            <p>Upload supplier invoices (PDF, JPG, PNG) or a ZIP containing documents. Enter or verify extracted line details below before posting stock.</p>
+                            <input id="invoiceFiles" type="file" class="form-control" multiple accept=".pdf,.jpg,.jpeg,.png,.zip,.webp">
+                            <button id="uploadInvoiceFiles" class="btn btn-primary m-t-10" type="button">Upload invoice files</button>
+                            <div id="invoiceUploadStatus" class="m-t-10"></div>
+                            <div class="row m-t-15"><div class="col-sm-4"><label>Distributor / Supplier</label><input id="importSupplier" class="form-control" type="text"></div><div class="col-sm-4"><label>Invoice number</label><input id="importInvoiceNo" class="form-control" type="text"></div><div class="col-sm-4"><label>Invoice currency</label><select id="importCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div></div>
+                            <div class="row m-t-10"><div class="col-sm-4"><label>Exchange rate to store base</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div></div>
+                            <div class="table-responsive m-t-15"><table class="table table-bordered" id="purchaseImportTable"><thead><tr><th>Product</th><th>Qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry (DD-MMM-YYYY)</th><th></th></tr></thead><tbody></tbody></table></div>
+                            <button id="addPurchaseImportRow" class="btn btn-default" type="button">Add invoice line</button>
+                            <button id="postPurchaseImport" class="btn btn-success pull-right" type="button">Review & post stock</button>
+                            <p class="text-muted m-t-10">Stock changes only after you post. Each line is saved with its batch, supplier, invoice, currency and exchange rate.</p>
+                        </div>
+                        <div id="imageImportPane" class="tab-pane fade">
+                            <p>Upload individual pictures or a ZIP archive. Matching suggestions use product names; confirm each match before assigning.</p>
+                            <input id="productImageFiles" type="file" class="form-control" multiple accept=".jpg,.jpeg,.png,.webp,.zip">
+                            <button id="uploadProductImages" class="btn btn-primary m-t-10" type="button">Upload and match pictures</button>
+                            <div id="imageMatchResults" class="m-t-15"></div>
+                        </div>
+                    </div>
+                </div>
+            </div></div>
+        </div>
     <script src="assets/dist/js/bundle.min.js"></script>
 </body>
 
