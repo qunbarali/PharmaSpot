@@ -1,3 +1,4 @@
+let reconciliationPreviewPayload = null;
 const $ = window.jQuery;
 const Store = require("electron-store");
 const store = new Store();
@@ -75,6 +76,40 @@ function uploadImportFiles(inputSelector, statusSelector, onSuccess) {
   });
 }
 
+function addReconciliationRow() {
+  loadImportProducts(() => {
+    const row = $('<tr></tr>');
+    row.append($('<td></td>').append($('<select class="form-control reconciliation-product"></select>').html(productOptions())));
+    row.append($('<td></td>').append($('<input class="form-control reconciliation-count" type="number" min="0" step="1" value="0">')));
+    row.append($('<td></td>').append($('<button class="btn btn-default remove-reconciliation-row" type="button">Remove</button>')));
+    $("#reconciliationTable tbody").append(row);
+  });
+}
+function loadReconciliationHistory() {
+  $.getJSON(importApi + "supplier-ledger/reconcile/history").done(records => {
+    const list = $('<ul class="list-group"></ul>');
+    (records || []).forEach(record => list.append($('<li class="list-group-item"></li>').text(new Date(record.createdAt).toLocaleString() + " — " + (record.changes || []).length + " product(s) — " + record.status)));
+    if (!records || !records.length) list.append($('<li class="list-group-item"></li>').text("No stock reconciliations recorded."));
+    $("#reconciliationHistory").empty().append($('<h4>Recent adjustments</h4>'), list);
+  }).fail(() => $("#reconciliationHistory").text("Could not load reconciliation history."));
+}
+function previewReconciliation() {
+  const items = [];
+  $("#reconciliationTable tbody tr").each(function () {
+    items.push({ productId: $(this).find(".reconciliation-product").val(), countedQuantity: $(this).find(".reconciliation-count").val() });
+  });
+  if (!items.length || items.some(item => !item.productId || item.countedQuantity === "" || Number(item.countedQuantity) < 0)) return window.alert("Add valid products and physical counts first.");
+  reconciliationPreviewPayload = null;
+  $("#commitReconciliation").prop("disabled", true);
+  $.ajax({ url: importApi + "supplier-ledger/reconcile/preview", method: "POST", contentType: "application/json", data: JSON.stringify({ items }) })
+    .done(result => {
+      reconciliationPreviewPayload = result.preview;
+      const table = $('<table class="table table-bordered"><thead><tr><th>Product</th><th>System</th><th>Counted</th><th>Difference</th></tr></thead><tbody></tbody></table>');
+      (result.preview || []).forEach(row => table.find("tbody").append($('<tr></tr>').append($('<td></td>').text(row.productName), $('<td></td>').text(row.systemQuantity), $('<td></td>').text(row.countedQuantity), $('<td></td>').text(row.variance))));
+      $("#reconciliationPreview").empty().append(table, $('<p class="text-warning"></p>').text(result.note || "Preview only; stock has not changed."));
+      $("#commitReconciliation").prop("disabled", !result.preview || !result.preview.length);
+    }).fail(xhr => $("#reconciliationPreview").text(xhr.responseJSON?.error || "Could not preview stock counts."));
+}
 function loadDistributorAccounts() {
   $.getJSON(importApi + "supplier-ledger/suppliers").done(accounts => {
     const table = $('<table class="table table-bordered"><thead><tr><th>Distributor</th><th>Currency balances</th></tr></thead><tbody></tbody></table>');
@@ -95,6 +130,18 @@ $(function () {
   if (store.get("user") && Number(store.get("user").perm_products) === 0) $("#documentImportButton").hide();
   $("#documentImportButton").on("click", () => loadImportProducts(() => {}));
   $("#refreshDistributorAccounts").on("click", loadDistributorAccounts);
+  $("#addReconciliationRow").on("click", addReconciliationRow);
+  $("#reconciliationTable").on("click", ".remove-reconciliation-row", function () { $(this).closest("tr").remove(); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
+  $("#previewReconciliation").on("click", previewReconciliation);
+  $("#reconciliationPane").on("shown.bs.tab", function () { loadReconciliationHistory(); if (!$("#reconciliationTable tbody tr").length) addReconciliationRow(); });
+  $("#commitReconciliation").on("click", function () {
+    if (!reconciliationPreviewPayload || !reconciliationPreviewPayload.length) return;
+    if (!window.confirm("Apply these stock-count adjustments? This will change inventory and create an audit record.")) return;
+    const items = reconciliationPreviewPayload.map(row => ({ productId: row.productId, systemQuantity: row.systemQuantity, countedQuantity: row.countedQuantity }));
+    $.ajax({ url: importApi + "supplier-ledger/reconcile/commit", method: "POST", contentType: "application/json", data: JSON.stringify({ confirm: true, items }) })
+      .done(result => { window.alert("Stock reconciliation saved. " + result.updated + " product(s) adjusted."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); $("#reconciliationPreview").empty(); $("#reconciliationTable tbody").empty(); loadReconciliationHistory(); })
+      .fail(xhr => { window.alert(xhr.responseJSON?.error || "Reconciliation failed. Preview stock again."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
+  });
   $("#distributorPane").on("shown.bs.tab", loadDistributorAccounts);
   $("#saveDistributorPayment").on("click", function () {
     const payload = { supplier: $("#distributorPaymentName").val(), amount: $("#distributorPaymentAmount").val(), currency: $("#distributorPaymentCurrency").val(), reference: $("#distributorPaymentReference").val() };
