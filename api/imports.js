@@ -80,7 +80,7 @@ app.post("/upload", (req, res) => {
             extractedCount += 1;
             const declaredSize = Number(entry.vars && entry.vars.uncompressedSize || 0);
             if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes + declaredSize > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
-            const normalizedEntry = String(entry.path || "").replace(/\\\\/g, "/");
+            const normalizedEntry = String(entry.path || "").replace(/\\/g, "/");
             const safeEntryPath = path.posix.normalize(normalizedEntry);
             if (!normalizedEntry || normalizedEntry.startsWith("/") || safeEntryPath === ".." || safeEntryPath.startsWith("../")) throw new Error("ZIP archive contains an unsafe file path.");
             const base = path.posix.basename(safeEntryPath);
