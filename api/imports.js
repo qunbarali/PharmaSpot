@@ -9,7 +9,7 @@ const { Transform } = require("stream");
 const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
-const { writeAudit } = require("./audit");
+const { writeAudit, authorizeAdmin } = require("./audit");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -300,7 +300,21 @@ app.post("/commit-purchase", (req, res) => {
   });
 });
 
-app.post("/approve-purchase/:draftId", (req, res) => {
+app.get("/pending-purchases", async (req, res) => {
+  try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required." });
+    importsDB.find({ type: "purchase_draft", status: "pending_approval" }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
+      if (err) return res.status(500).json({ error: "Could not load pending purchases." });
+      res.json(drafts || []);
+    });
+  } catch (e) { res.status(500).json({ error: "Could not load pending purchases." }); }
+});
+
+app.post("/approve-purchase/:draftId", async (req, res) => {
+  try {
+  const admin = await authorizeAdmin(req);
+  if (!admin) return res.status(403).json({ error: "An active administrator account is required to approve purchases." });
   if (!req.body || req.body.confirm !== true) return res.status(400).json({ error: "Explicit approval confirmation is required." });
   importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" }, (err, draft) => {
     if (err) return res.status(500).json({ error: "Could not load purchase draft." });
@@ -326,6 +340,9 @@ app.post("/approve-purchase/:draftId", (req, res) => {
 
 
 app.post("/reverse-purchase/:importId", async (req, res) => {
+  try {
+  const admin = await authorizeAdmin(req);
+  if (!admin) return res.status(403).json({ error: "An active administrator account is required to reverse purchases." });
   if (!req.body || req.body.confirm !== true || !String(req.body.reason || "").trim()) return res.status(400).json({ error: "Explicit confirmation and a reversal reason are required." });
   importsDB.findOne({ _id: req.params.importId, status: "posted" }, async (lookupError, record) => {
     if (lookupError) return res.status(500).json({ error: "Could not load purchase record." });
@@ -383,6 +400,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
       res.status(409).json({ error: error.message, rolledBack: !rollbackError, rollbackError: rollbackError ? "Manual stock reconciliation is required." : undefined });
     }
   });
+  } catch (authError) { if (!res.headersSent) res.status(500).json({ error: "Could not verify purchase reversal administrator." }); }
 });
 
 app.get("/file/:storedName", (req, res) => {
