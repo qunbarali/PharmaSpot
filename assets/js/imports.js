@@ -37,7 +37,25 @@ function addPurchaseRow() {
   $("#purchaseImportTable tbody").append(row);
 }
 
-function runInvoiceOcr(files) {\n  const supported = (files || []).filter(file => [".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(file.type));\n  if (!supported.length) return;\n  const panel = $("#invoiceOcrResults").empty().append($('<p class="text-muted"></p>').text("Reading invoice documents… OCR suggestions must be checked against the original."));\n  supported.forEach(file => {\n    $.ajax({ url: importApi + "imports/ocr/" + encodeURIComponent(file.storedName), method: "POST" })\n      .done(result => {\n        const card = $('<div class="panel panel-default m-t-10"></div>');\n        card.append($('<div class="panel-heading"></div>').text(file.originalName + " — OCR draft"));\n        const body = $('<div class="panel-body"></div>');\n        body.append($('<p></p>').text("Invoice number: " + (result.fields.invoiceNo || "Not detected") + " | Date: " + (result.fields.invoiceDate || "Not detected") + " | Currency: " + (result.fields.currency || "Not detected")));\n        body.append($('<pre style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre>').text(result.text || "No readable text detected."));\n        body.append($('<p class="text-warning"></p>').text(result.warning || "Verify all OCR values before posting."));\n        card.append(body); panel.append(card);\n      })\n      .fail(xhr => panel.append($('<p class="text-danger"></p>').text(file.originalName + ": " + (xhr.responseJSON?.error || "OCR failed."))));\n  });\n}\nfunction uploadImportFiles(inputSelector, statusSelector, onSuccess) {
+function runInvoiceOcr(files) {
+  const supported = (files || []).filter(file => [".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(file.type));
+  if (!supported.length) return;
+  const panel = $("#invoiceOcrResults").empty().append($('<p class="text-muted"></p>').text("Reading invoice documents… OCR suggestions must be checked against the original."));
+  supported.forEach(file => {
+    $.ajax({ url: importApi + "imports/ocr/" + encodeURIComponent(file.storedName), method: "POST" })
+      .done(result => {
+        const card = $('<div class="panel panel-default m-t-10"></div>');
+        card.append($('<div class="panel-heading"></div>').text(file.originalName + " — OCR draft"));
+        const body = $('<div class="panel-body"></div>');
+        body.append($('<p></p>').text("Invoice number: " + (result.fields.invoiceNo || "Not detected") + " | Date: " + (result.fields.invoiceDate || "Not detected") + " | Currency: " + (result.fields.currency || "Not detected")));
+        body.append($('<pre style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre>').text(result.text || "No readable text detected."));
+        body.append($('<p class="text-warning"></p>').text(result.warning || "Verify all OCR values before posting."));
+        card.append(body); panel.append(card);
+      })
+      .fail(xhr => panel.append($('<p class="text-danger"></p>').text(file.originalName + ": " + (xhr.responseJSON?.error || "OCR failed."))));
+  });
+}
+function uploadImportFiles(inputSelector, statusSelector, onSuccess) {
   const input = document.querySelector(inputSelector);
   if (!input || !input.files || !input.files.length) {
     window.alert("Please select at least one file.");
