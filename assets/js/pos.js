@@ -184,7 +184,7 @@ $.fn.serializeObject = function () {
 
 auth = storage.get("auth");
 user = storage.get("user");
-if (auth && auth.auth && user && (!user.sessionToken || !user.sessionExpiresAt || !Number.isFinite(Date.parse(user.sessionExpiresAt)) || Date.parse(user.sessionExpiresAt) <= Date.now())) {
+if (auth && auth.auth && (!user || !user.sessionToken || !user.sessionExpiresAt || !Number.isFinite(Date.parse(user.sessionExpiresAt)) || Date.parse(user.sessionExpiresAt) <= Date.now())) {
   storage.delete("auth");
   storage.delete("user");
   auth = undefined;
