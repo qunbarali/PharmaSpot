@@ -1839,7 +1839,7 @@ if (auth == undefined) {
         diagOptions.okButtonText,
         diagOptions.cancelButtonText,
         () => {
-          $.get(api + "users/logout/" + user._id, function (data) {
+          $.get(api + "users/logout/" + user._id).always(function () {
             storage.delete("auth");
             storage.delete("user");
             ipcRenderer.send("app-reload", "");
