@@ -886,22 +886,43 @@
         </div>
     </div>
         <div id="documentImportModal" class="modal fade" tabindex="-1" role="dialog" aria-labelledby="documentImportTitle" aria-hidden="true">
-            <div class="modal-dialog modal-lg"><div class="modal-content">
-                <div class="modal-header"><button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button><h4 class="modal-title" id="documentImportTitle">Document & Product Import</h4></div>
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+                    <h4 class="modal-title" id="documentImportTitle">Document & Product Import</h4>
+                </div>
                 <div class="modal-body">
-                    <ul class="nav nav-tabs"><li class="active"><a data-toggle="tab" href="#invoiceImportPane">Supplier invoices</a></li><li><a data-toggle="tab" href="#imageImportPane">Product pictures</a></li><li><a data-toggle="tab" href="#distributorPane">Distributors & expiry</a></li><li><a data-toggle="tab" href="#reconciliationPane">Stock reconciliation</a></li></ul>
+                    <ul class="nav nav-tabs">
+                        <li class="active"><a data-toggle="tab" href="#invoiceImportPane">Supplier invoices</a></li>
+                        <li><a data-toggle="tab" href="#imageImportPane">Product pictures</a></li>
+                        <li><a data-toggle="tab" href="#distributorPane">Distributors & expiry</a></li>
+                        <li><a data-toggle="tab" href="#reconciliationPane">Stock reconciliation</a></li>
+                    </ul>
                     <div class="tab-content" style="padding-top:15px">
                         <div id="invoiceImportPane" class="tab-pane fade in active">
-                            <p>Upload supplier invoices (PDF, JPG, PNG) or a ZIP containing documents. Enter or verify extracted line details below before posting stock.</p>
+                            <p>Upload supplier invoices (PDF, JPG, PNG) or a ZIP containing documents. Verify all extracted details before approval.</p>
                             <input id="invoiceFiles" type="file" class="form-control" multiple accept=".pdf,.jpg,.jpeg,.png,.zip,.webp">
                             <button id="uploadInvoiceFiles" class="btn btn-primary m-t-10" type="button">Upload invoice files</button>
-                            <div id="invoiceUploadStatus" class="m-t-10"></div><div id="invoiceOcrResults" class="m-t-10"></div>
-                            <div class="row m-t-15"><div class="col-sm-4"><label>Distributor / Supplier</label><input id="importSupplier" class="form-control" type="text"></div><div class="col-sm-4"><label>Invoice number</label><input id="importInvoiceNo" class="form-control" type="text"></div><div class="col-sm-4"><label>Invoice currency</label><select id="importCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div></div>
-                            <div class="row m-t-10"><div class="col-sm-4"><label>Rate: 1 invoice currency = X store currency</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div></div>
-                            <div class="table-responsive m-t-15"><table class="table table-bordered" id="purchaseImportTable"><thead><tr><th>Product</th><th>Qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry (DD-MMM-YYYY)</th><th></th></tr></thead><tbody></tbody></table></div>
+                            <div id="invoiceUploadStatus" class="m-t-10"></div>
+                            <div id="invoiceOcrResults" class="m-t-10"></div>
+                            <div class="row m-t-15">
+                                <div class="col-sm-4"><label>Distributor / Supplier</label><input id="importSupplier" class="form-control" type="text"></div>
+                                <div class="col-sm-4"><label>Invoice number</label><input id="importInvoiceNo" class="form-control" type="text"></div>
+                                <div class="col-sm-4"><label>Invoice currency</label><select id="importCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div>
+                            </div>
+                            <div class="row m-t-10">
+                                <div class="col-sm-4"><label>Rate: 1 invoice currency = X store currency</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div>
+                            </div>
+                            <div class="table-responsive m-t-15">
+                                <table class="table table-bordered" id="purchaseImportTable">
+                                    <thead><tr><th>Product</th><th>Qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry (DD-MMM-YYYY)</th><th></th></tr></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
                             <button id="addPurchaseImportRow" class="btn btn-default" type="button">Add invoice line</button>
-                            <button id="postPurchaseImport" class="btn btn-success pull-right" type="button">Review & post stock</button>
-                            <p class="text-muted m-t-10">Stock changes only after you post. Each line is saved with its batch, supplier, invoice, currency and exchange rate.</p>
+                            <button id="postPurchaseImport" class="btn btn-success pull-right" type="button">Save draft for approval</button>
+                            <p class="text-muted m-t-10">Saving a draft does not change inventory. An administrator must approve it before stock and distributor balances are updated.</p>
                         </div>
                         <div id="imageImportPane" class="tab-pane fade">
                             <p>Upload individual pictures or a ZIP archive. Matching suggestions use product names; confirm each match before assigning.</p>
@@ -910,24 +931,6 @@
                             <div id="imageMatchResults" class="m-t-15"></div>
                         </div>
                         <div id="distributorPane" class="tab-pane fade">
-                            <p>Distributor balances are tracked separately by currency. Record payments against the correct distributor and review upcoming batch expiries.</p>
-                            <button id="refreshDistributorAccounts" class="btn btn-primary" type="button">Refresh accounts</button>
-                            <div id="distributorAccounts" class="m-t-15"></div>
-                            <div class="row m-t-15"><div class="col-sm-4"><label>Distributor</label><input id="distributorPaymentName" class="form-control" type="text"></div><div class="col-sm-3"><label>Amount</label><input id="distributorPaymentAmount" class="form-control" type="number" min="0.01" step="0.01"></div><div class="col-sm-2"><label>Currency</label><select id="distributorPaymentCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div><div class="col-sm-3"><label>Reference</label><input id="distributorPaymentReference" class="form-control" type="text"></div></div>
-                            <button id="saveDistributorPayment" class="btn btn-success m-t-10" type="button">Record supplier payment</button>
-                            <h4 class="m-t-20">Expiry alerts — next 90 days</h4><div id="batchExpiryAlerts"></div>
-                            <h4 class="m-t-20">Pending purchase approvals</h4><div id="pendingPurchaseDrafts"></div><h4 class="m-t-20">Purchase history & controlled reversals</h4><div id="purchaseImportHistory"></div>
-                            <h4 class="m-t-20">Administrator audit trail</h4><button id="refreshAdminAudit" class="btn btn-default btn-sm" type="button">Refresh audit trail</button><div id="adminAuditTrail" class="m-t-10"></div>
-                        </div>
-                        <div id="reconciliationPane" class="tab-pane fade">
-                            <p>Enter physical stock counts. Preview calculates differences without changing inventory. Confirm only after checking the preview.</p>
-                            <button id="addReconciliationRow" class="btn btn-default" type="button">Add stock-count row</button>
-                            <div class="table-responsive m-t-10"><table class="table table-bordered" id="reconciliationTable"><thead><tr><th>Product</th><th>Physical count</th><th></th></tr></thead><tbody></tbody></table></div>
-                            <button id="previewReconciliation" class="btn btn-primary" type="button">Preview differences</button>
-                            <div id="reconciliationPreview" class="m-t-15"></div>
-                            <button id="commitReconciliation" class="btn btn-danger" type="button" disabled>Confirm stock adjustment</button>
-                            <div id="reconciliationHistory" class="m-t-15"></div>
-                        </div>
                             <p>Distributor balances are tracked separately by currency. Record payments against the correct distributor and review upcoming batch expiries.</p>
                             <button id="refreshDistributorAccounts" class="btn btn-primary" type="button">Refresh accounts</button>
                             <div id="distributorAccounts" class="m-t-15"></div>
@@ -940,12 +943,33 @@
                             <button id="saveDistributorPayment" class="btn btn-success m-t-10" type="button">Record supplier payment</button>
                             <h4 class="m-t-20">Expiry alerts — next 90 days</h4>
                             <div id="batchExpiryAlerts"></div>
+                            <h4 class="m-t-20">Pending purchase approvals</h4>
+                            <div id="pendingPurchaseDrafts"></div>
+                            <h4 class="m-t-20">Purchase history & controlled reversals</h4>
+                            <div id="purchaseImportHistory"></div>
+                            <h4 class="m-t-20">Administrator audit trail</h4>
+                            <button id="refreshAdminAudit" class="btn btn-default btn-sm" type="button">Refresh audit trail</button>
+                            <div id="adminAuditTrail" class="m-t-10"></div>
                         </div>
+                        <div id="reconciliationPane" class="tab-pane fade">
+                            <p>Enter physical stock counts. Preview calculates differences without changing inventory. Confirm only after checking the preview.</p>
+                            <button id="addReconciliationRow" class="btn btn-default" type="button">Add stock-count row</button>
+                            <div class="table-responsive m-t-10">
+                                <table class="table table-bordered" id="reconciliationTable">
+                                    <thead><tr><th>Product</th><th>Physical count by batch</th><th></th></tr></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <button id="previewReconciliation" class="btn btn-primary" type="button">Preview differences</button>
+                            <div id="reconciliationPreview" class="m-t-15"></div>
+                            <button id="commitReconciliation" class="btn btn-danger" type="button" disabled>Confirm stock adjustment</button>
+                            <div id="reconciliationHistory" class="m-t-15"></div>
                         </div>
                     </div>
                 </div>
-            </div></div>
+            </div>
         </div>
+    </div>
     <script src="assets/dist/js/bundle.min.js"></script>
 </body>
 
