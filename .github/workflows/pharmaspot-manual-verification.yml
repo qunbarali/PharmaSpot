@@ -64,13 +64,17 @@ jobs:
       - name: Capture dependency vulnerability report
         shell: pwsh
         run: |
-          npm audit --json | Out-File -FilePath "npm-audit-report.json" -Encoding utf8
+          cmd /c "npm audit --json > npm-audit-report.json 2>&1"
+          $auditExitCode = $LASTEXITCODE
           if (-not (Test-Path "npm-audit-report.json") -or (Get-Item "npm-audit-report.json").Length -eq 0) {
             throw "npm audit did not produce a vulnerability report."
           }
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "npm audit found advisories; report will be uploaded for review."
+          if ($auditExitCode -ne 0) {
+            Write-Host "npm audit reported advisories (exit code $auditExitCode); continuing so tests and packaging can run."
+          } else {
+            Write-Host "npm audit completed without reported advisories."
           }
+          $global:LASTEXITCODE = 0
       - name: Run automated tests
         env:
           NODE_OPTIONS: --experimental-vm-modules
