@@ -25,9 +25,9 @@ function productOptions(selected) {
   ).join("");
 }
 
-function addPurchaseRow() {
+function addPurchaseRow(values = {}) {
   const row = $('<tr>' +
-    '<td><select class="form-control import-product">' + productOptions() + '</select></td>' +
+    '<td><select class="form-control import-product">' + productOptions(values.productId) + '</select></td>' +
     '<td><input class="form-control import-quantity" type="number" min="0.001" step="any" placeholder="Qty"></td>' +
     '<td><input class="form-control import-cost" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
     '<td><input class="form-control import-sale" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
@@ -36,12 +36,43 @@ function addPurchaseRow() {
     '<td><button type="button" class="btn btn-danger btn-xs remove-import-row" title="Remove line">×</button></td>' +
     '</tr>');
   $("#purchaseImportTable tbody").append(row);
+  row.find(".import-product").val(values.productId || "");
+  row.find(".import-quantity").val(values.quantity ?? "");
+  row.find(".import-cost").val(values.purchasePrice ?? "");
+  row.find(".import-sale").val(values.salePrice ?? "");
+  row.find(".import-batch").val(values.batchNumber || "");
+  row.find(".import-expiry").val(values.expiryDate || "");
+}
+
+function bestInvoiceProductMatch(description) {
+  const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const target = normalize(description);
+  if (!target) return "";
+  const targetTokens = target.split(/\s+/).filter(token => token.length > 2);
+  const ranked = importProducts.map(product => {
+    const name = normalize(product.name);
+    if (!name) return { product, score: 0 };
+    if (target === name || target.includes(name) || name.includes(target)) return { product, score: 0.95 };
+    const tokens = name.split(/\s+/).filter(token => token.length > 2);
+    const overlap = tokens.filter(token => targetTokens.includes(token)).length;
+    return { product, score: tokens.length ? overlap / Math.max(tokens.length, targetTokens.length, 1) : 0 };
+  }).sort((a, b) => b.score - a.score);
+  return ranked.length && ranked[0].score >= 0.72 ? String(ranked[0].product._id) : "";
 }
 
 function runInvoiceOcr(files) {
-  const supported = (files || []).filter(file => [".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(file.type));
-  if (!supported.length) return;
-  const panel = $("#invoiceOcrResults").empty().append($('<p class="text-muted"></p>').text("Reading invoice documents… OCR suggestions must be checked against the original."));
+  const candidates = (files || []).flatMap(file =>
+    file.type === ".zip" ? (file.extractedImages || []) : [file]
+  );
+  const supported = candidates.filter(file =>
+    [".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(file.type || String(file.storedName || "").slice(String(file.storedName || "").lastIndexOf(".")).toLowerCase())
+  );
+  const panel = $("#invoiceOcrResults").empty();
+  if (!supported.length) {
+    panel.text("Files uploaded. No supported PDF or image invoice was found to read.");
+    return;
+  }
+  panel.append($('<p class="text-muted"></p>').text("Reading invoice documents… OCR results are drafts and must be checked against the original."));
   supported.forEach(file => {
     $.ajax({ url: importApi + "imports/ocr/" + encodeURIComponent(file.storedName), method: "POST" })
       .done(result => {
@@ -52,9 +83,33 @@ function runInvoiceOcr(files) {
         if (result.fields.invoiceNo && !$("#importInvoiceNo").val()) $("#importInvoiceNo").val(result.fields.invoiceNo);
         if (result.fields.currency && ["PKR", "INR", "USD"].includes(result.fields.currency) && !$("#importCurrency").data("user-selected")) $("#importCurrency").val(result.fields.currency).trigger("change");
         if (result.rows && result.rows.length) {
-          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>OCR description</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody></tbody></table>');
-          result.rows.forEach(row => suggestions.find("tbody").append($("<tr></tr>").append($("<td></td>").text(row.description), $("<td></td>").text(row.quantity), $("<td></td>").text(row.unitPrice), $("<td></td>").text(row.lineTotal))));
-          body.append($('<p class="text-warning"></p>').text("Detected line suggestions only. Match each item to the correct medicine and verify batch, expiry and prices before approval."), suggestions);
+          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Qty</th><th>Unit price</th><th>Line total</th><th></th></tr></thead><tbody></tbody></table>');
+          result.rows.forEach(invoiceRow => {
+            const suggestedId = bestInvoiceProductMatch(invoiceRow.description);
+            const select = $('<select class="form-control input-sm"></select>').html(productOptions(suggestedId));
+            const add = $('<button class="btn btn-success btn-xs" type="button">Add line</button>');
+            add.on("click", () => {
+              if (!select.val()) return window.alert("Choose the correct medicine for this invoice line first.");
+              addPurchaseRow({
+                productId: select.val(),
+                quantity: invoiceRow.quantity,
+                purchasePrice: invoiceRow.unitPrice
+              });
+              add.prop("disabled", true).text("Added");
+            });
+            const line = $("<tr></tr>").append(
+              $("<td></td>").text(invoiceRow.description),
+              $("<td></td>").append(select),
+              $("<td></td>").text(invoiceRow.quantity),
+              $("<td></td>").text(invoiceRow.unitPrice),
+              $("<td></td>").text(invoiceRow.lineTotal),
+              $("<td></td>").append(add)
+            );
+            suggestions.find("tbody").append(line);
+          });
+          body.append($('<p class="text-warning"></p>').text("Select or confirm the medicine, then add each detected line to the purchase table. Sale price, batch number and expiry still require manual verification."), suggestions);
+        } else {
+          body.append($('<p class="text-warning"></p>').text("No structured invoice lines were detected. Review the extracted text and enter the lines manually."));
         }
         body.append($('<pre style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre>').text(result.text || "No readable text detected."));
         body.append($('<p class="text-warning"></p>').text(result.warning || "Verify all OCR values before posting."));
@@ -63,14 +118,18 @@ function runInvoiceOcr(files) {
       .fail(xhr => panel.append($('<p class="text-danger"></p>').text(file.originalName + ": " + (xhr.responseJSON?.error || "OCR failed."))));
   });
 }
-function uploadImportFiles(inputSelector, statusSelector, onSuccess) {
+function uploadImportFiles(inputSelector, statusSelector, onSuccess, buttonSelector) {
   const input = document.querySelector(inputSelector);
+  const button = buttonSelector ? $(buttonSelector) : $();
+  const originalLabel = button.text();
   if (!input || !input.files || !input.files.length) {
+    $(statusSelector).text("Select at least one file before uploading.");
     window.alert("Please select at least one file.");
     return;
   }
   const data = new FormData();
   Array.from(input.files).forEach(file => data.append("files", file));
+  button.prop("disabled", true).text("Uploading…");
   $(statusSelector).text("Uploading and checking files…");
   $.ajax({
     url: importApi + "imports/upload",
@@ -78,11 +137,20 @@ function uploadImportFiles(inputSelector, statusSelector, onSuccess) {
     data,
     processData: false,
     contentType: false,
-    success: onSuccess,
-    error: xhr => $(statusSelector).text(xhr.responseJSON?.error || "Upload failed.")
+    timeout: 120000
+  }).done(result => {
+    if (!result || !Array.isArray(result.files)) {
+      $(statusSelector).text("The server returned an invalid upload response.");
+      return;
+    }
+    if (typeof onSuccess === "function") onSuccess(result);
+  }).fail(xhr => {
+    const message = xhr.responseJSON?.error || (xhr.status ? "Upload failed (HTTP " + xhr.status + ")." : "Upload failed. Check that the PharmaSpot server is running."));
+    $(statusSelector).text(message);
+  }).always(() => {
+    button.prop("disabled", false).text(originalLabel);
   });
 }
-
 function renderReconciliationCounts(row, product) {
   const container = row.find(".reconciliation-counts").empty();
   row.data("stockSnapshot", product);
@@ -318,10 +386,12 @@ $(function () {
   $("#purchaseImportTable").on("click", ".remove-import-row", function () { $(this).closest("tr").remove(); });
   $("#uploadInvoiceFiles").on("click", () => uploadImportFiles("#invoiceFiles", "#invoiceUploadStatus", result => {
     stagedInvoiceFiles = result.files || [];
-    $("#invoiceUploadStatus").text(result.note || "Files staged. Enter and verify invoice details below.");
-    runInvoiceOcr(stagedInvoiceFiles);
-    loadImportProducts(() => { if (!$("#purchaseImportTable tbody tr").length) addPurchaseRow(); });
-  }));
+    $("#invoiceUploadStatus").text((result.files.length || 0) + " file(s) uploaded. Preparing invoice extraction…");
+    loadImportProducts(() => {
+      if (!$("#purchaseImportTable tbody tr").length) addPurchaseRow();
+      runInvoiceOcr(stagedInvoiceFiles);
+    });
+  }, "#uploadInvoiceFiles"));
   $("#postPurchaseImport").on("click", function () {
     const items = [];
     $("#purchaseImportTable tbody tr").each(function () {
@@ -405,5 +475,5 @@ $(function () {
         container.append(card);
       });
     });
-  }));
+  }, "#uploadProductImages"));
 });
