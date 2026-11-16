@@ -54,7 +54,9 @@
     "xmlhttprequest": "^1.8.0",
     "pdf-parse": "^1.1.1",
     "tesseract.js": "^6.0.1",
-    "@tesseract.js-data/eng": "^1.0.0"
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@napi-rs/canvas": "^1.0.9",
+    "pdfjs-dist": "^6.5.438"
   },
   "overrides": {
     "@malept/cross-spawn-promise": "1.1.1",
