@@ -311,6 +311,10 @@ app.post("/commit-purchase", async (req, res) => {
   catch (error) { return res.status(400).json({ error: error.message }); }
   const { supplier, invoiceNo, currency, baseCurrency, exchangeRate, items } = validated;
   const draftKey = supplier.toLowerCase() + "|" + invoiceNo.toLowerCase();
+  try {
+    const existing = await new Promise((resolve, reject) => importsDB.findOne({ importKey: draftKey }, (err, doc) => err ? reject(err) : resolve(doc)));
+    if (existing) return res.status(409).json({ error: "This supplier invoice has already been posted." });
+  } catch (_) { return res.status(500).json({ error: "Could not check for duplicate supplier invoices." }); }
   importsDB.insert({
     type: "purchase_draft", status: "pending_approval", draftKey, supplier, invoiceNo,
     currency, baseCurrency, exchangeRate, items,
@@ -319,7 +323,7 @@ app.post("/commit-purchase", async (req, res) => {
   }, (err, draft) => {
     if (err && err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
     if (err) return res.status(500).json({ error: "Could not save purchase for approval." });
-    writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, { supplier, invoiceNo, lineCount: rows.length })
+    writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, { supplier, invoiceNo, lineCount: items.length })
       .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." }))
       .catch(() => res.status(500).json({ error: "Purchase draft saved but audit record failed. Contact an administrator before approval." }));
   });
