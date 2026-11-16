@@ -189,9 +189,11 @@ function loadPendingPurchaseDrafts() {
     (drafts || []).forEach(draft => {
       const item = $('<div class="list-group-item"></div>');
       item.append($('<strong></strong>').text(draft.supplier + " — invoice " + draft.invoiceNo));
-      item.append($('<p class="small text-muted"></p>').text((draft.items || []).length + " line(s) | " + new Date(draft.createdAt).toLocaleString()));
+      item.append($('<p class="small text-muted"></p>').text((draft.items || []).length + " line(s) | " + new Date(draft.createdAt).toLocaleString() + " | " + draft.status));
       const approve = $('<button class="btn btn-success btn-xs" type="button">Approve and post</button>');
+      if (draft.status === "approval_needs_reconciliation") approve.prop("disabled", true).text("Manual reconciliation required");
       approve.on("click", () => {
+        if (draft.status !== "pending_approval") return;
         if (!window.confirm("Approve invoice " + draft.invoiceNo + " from " + draft.supplier + " and update stock and supplier balance?")) return;
         $.ajax({ url: importApi + "imports/approve-purchase/" + encodeURIComponent(draft._id), method: "POST", contentType: "application/json", data: JSON.stringify({ confirm: true }) })
           .done(result => { window.alert("Purchase approved. " + result.appliedRows + " line(s) posted."); loadPendingPurchaseDrafts(); loadPurchaseImportHistory(); loadDistributorAccounts(); loadAdminAuditTrail(); })
