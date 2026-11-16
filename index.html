@@ -897,7 +897,7 @@
                             <button id="uploadInvoiceFiles" class="btn btn-primary m-t-10" type="button">Upload invoice files</button>
                             <div id="invoiceUploadStatus" class="m-t-10"></div>
                             <div class="row m-t-15"><div class="col-sm-4"><label>Distributor / Supplier</label><input id="importSupplier" class="form-control" type="text"></div><div class="col-sm-4"><label>Invoice number</label><input id="importInvoiceNo" class="form-control" type="text"></div><div class="col-sm-4"><label>Invoice currency</label><select id="importCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div></div>
-                            <div class="row m-t-10"><div class="col-sm-4"><label>Exchange rate to store base</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div></div>
+                            <div class="row m-t-10"><div class="col-sm-4"><label>Rate: 1 invoice currency = X store currency</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div></div>
                             <div class="table-responsive m-t-15"><table class="table table-bordered" id="purchaseImportTable"><thead><tr><th>Product</th><th>Qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry (DD-MMM-YYYY)</th><th></th></tr></thead><tbody></tbody></table></div>
                             <button id="addPurchaseImportRow" class="btn btn-default" type="button">Add invoice line</button>
                             <button id="postPurchaseImport" class="btn btn-success pull-right" type="button">Review & post stock</button>
