@@ -10,6 +10,7 @@ const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
 const { writeAudit, authorizeAdmin } = require("./audit");
+const { findReversalBatchIndex } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -212,7 +213,9 @@ const postPurchaseHandler = (req, res) => {
       }
       inventoryDB.findOne({ _id: productId }, (findError, product) => {
         if (findError || !product) return next(findError || new Error("One selected product no longer exists."));
+        const importLineId = crypto.randomUUID();
         const batch = {
+          importLineId,
           batchNumber,
           expiryDate,
           quantity,
@@ -242,7 +245,7 @@ const postPurchaseHandler = (req, res) => {
         inventoryDB.update({ _id: productId, quantity: Number(product.quantity || 0) }, { $set: updateFields }, {}, (updateError, count) => {
           if (updateError || !count) { snapshots.pop(); return next(updateError || new Error("Stock changed during purchase posting.")); }
           snapshot.after = { ...JSON.parse(JSON.stringify(product)), ...updateFields };
-          applied.push({ productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate });
+          applied.push({ importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate });
           next();
         });
       });
@@ -353,24 +356,19 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
     if (!record) return res.status(404).json({ error: "Posted purchase not found or already reversed." });
     const changes = [];
     try {
-      const grouped = new Map();
-      for (const item of record.items || []) {
-        const key = String(item.productId) + "|" + String(item.batchNumber) + "|" + String(item.expiryDate);
-        const current = grouped.get(key) || { productId: item.productId, batchNumber: item.batchNumber, expiryDate: item.expiryDate, quantity: 0 };
-        current.quantity += Number(item.quantity);
-        grouped.set(key, current);
-      }
-      for (const item of grouped.values()) {
+      for (const item of (record.items || [])) {
         const { result: product } = await new Promise((resolve, reject) => inventoryDB.findOne({ _id: item.productId }, (err, doc) => err ? reject(err) : resolve({ result: doc })));
         if (!product) throw new Error("A product from this invoice no longer exists; use stock reconciliation instead.");
         const batches = Array.isArray(product.batches) ? product.batches : [];
-        const index = batches.findIndex(batch => String(batch.batchNumber) === String(item.batchNumber) && String(batch.expiryDate) === String(item.expiryDate));
-        if (index < 0 || Number(batches[index].quantity) !== item.quantity || Number(product.quantity || 0) < item.quantity) {
+        const index = findReversalBatchIndex(batches, item);
+        const quantity = Number(item.quantity);
+        if (index < 0 || Number(batches[index].quantity) !== quantity || Number(product.quantity || 0) < quantity) {
           throw new Error("A purchased batch has changed or been sold. Automatic reversal is blocked to protect stock; use stock reconciliation.");
         }
         const before = JSON.parse(JSON.stringify(product));
-        const nextBatches = batches.slice(); nextBatches.splice(index, 1);
-        const nextQuantity = Number(product.quantity || 0) - item.quantity;
+        const nextBatches = batches.slice();
+        nextBatches.splice(index, 1);
+        const nextQuantity = Number(product.quantity || 0) - quantity;
         const { result: count } = await new Promise((resolve, reject) => inventoryDB.update(
           { _id: product._id, quantity: Number(product.quantity || 0), batches },
           { $set: { quantity: nextQuantity, batches: nextBatches } }, {}, (err, n) => err ? reject(err) : resolve({ result: n })
@@ -386,7 +384,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
       }));
       importsDB.update({ _id: record._id, status: "posted" }, { $set: { status: "reversed", reversedAt: new Date().toISOString(), reversalReason: String(req.body.reason).slice(0, 300), reversalChanges: changes.map(change => ({ productId: change.productId, quantityBefore: change.before.quantity, quantityAfter: change.afterQuantity })) } }, {}, (saveError, count) => {
         if (saveError || !count) return res.status(500).json({ error: "Stock reversal was applied but its import status could not be updated. Contact an administrator before further changes.", reversalLedgerId: reversal && reversal.eventKey });
-        writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), adjustedProducts: changes.length })
+        writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), adjustedProducts: new Set(changes.map(change => String(change.productId))).size })
           .then(() => res.json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length }))
           .catch(() => res.status(207).json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length, warning: "Reversal completed but audit logging failed. Contact an administrator." }));
       });
