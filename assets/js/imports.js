@@ -83,12 +83,50 @@ function uploadImportFiles(inputSelector, statusSelector, onSuccess) {
   });
 }
 
+function renderReconciliationCounts(row, product) {
+  const container = row.find(".reconciliation-counts").empty();
+  row.data("stockSnapshot", product);
+  const quantity = Number(product.quantity || 0);
+  const batches = Array.isArray(product.batches) ? product.batches : [];
+  const batchTotal = batches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+  if (!Number.isFinite(batchTotal) || batchTotal > quantity) {
+    container.append($('<p class="text-danger"></p>').text("Batch quantities exceed product stock. Correct inventory before reconciliation."));
+    row.data("stockSnapshot", null);
+    reconciliationPreviewPayload = null;
+    $("#commitReconciliation").prop("disabled", true);
+    return;
+  }
+  batches.forEach((batch, index) => {
+    const line = $('<div class="form-group"></div>');
+    const label = $('<label></label>').text("Batch " + (batch.batchNumber || ("#" + (index + 1))) + " | Expiry " + (batch.expiryDate || "Not recorded") + " | System " + Number(batch.quantity || 0));
+    const input = $('<input class="form-control reconciliation-batch-count" type="number" min="0" step="any">');
+    input.attr("data-batch-index", index).attr("data-batch-number", batch.batchNumber || "").attr("data-expiry-date", batch.expiryDate || "").attr("data-system-quantity", Number(batch.quantity || 0)).val(Number(batch.quantity || 0));
+    line.append(label, input); container.append(line);
+  });
+  const untracked = quantity - batchTotal;
+  const line = $('<div class="form-group"></div>');
+  const label = $('<label></label>').text((batches.length ? "Unbatched / legacy stock" : "Unbatched stock") + " | System " + untracked);
+  const input = $('<input class="form-control reconciliation-untracked-count" type="number" min="0" step="any">').attr("data-system-quantity", untracked).val(untracked);
+  line.append(label, input); container.append(line);
+}
 function addReconciliationRow() {
   loadImportProducts(() => {
     const row = $('<tr></tr>');
-    row.append($('<td></td>').append($('<select class="form-control reconciliation-product"></select>').html(productOptions())));
-    row.append($('<td></td>').append($('<input class="form-control reconciliation-count" type="number" min="0" step="1" value="0">')));
-    row.append($('<td></td>').append($('<button class="btn btn-default remove-reconciliation-row" type="button">Remove</button>')));
+    const select = $('<select class="form-control reconciliation-product"></select>').html(productOptions());
+    const counts = $('<div class="reconciliation-counts"></div>');
+    select.on("change", function () {
+      reconciliationPreviewPayload = null;
+      $("#commitReconciliation").prop("disabled", true);
+      $("#reconciliationPreview").empty();
+      if (!this.value) { counts.empty(); row.data("stockSnapshot", null); return; }
+      $.getJSON(importApi + "inventory/product/" + encodeURIComponent(this.value))
+        .done(product => {
+          if (!product) return counts.text("Product not found.");
+          renderReconciliationCounts(row, product);
+        })
+        .fail(() => counts.text("Could not load product batches."));
+    });
+    row.append($('<td></td>').append(select), $('<td></td>').append(counts), $('<td></td>').append($('<button class="btn btn-default remove-reconciliation-row" type="button">Remove</button>')));
     $("#reconciliationTable tbody").append(row);
   });
 }
@@ -102,17 +140,45 @@ function loadReconciliationHistory() {
 }
 function previewReconciliation() {
   const items = [];
+  let invalid = false;
   $("#reconciliationTable tbody tr").each(function () {
-    items.push({ productId: $(this).find(".reconciliation-product").val(), countedQuantity: $(this).find(".reconciliation-count").val() });
+    const row = $(this), product = row.data("stockSnapshot");
+    if (!product) { invalid = true; return; }
+    const batchCounts = [];
+    row.find(".reconciliation-batch-count").each(function () {
+      const counted = this.value;
+      if (counted === "" || !Number.isFinite(Number(counted)) || Number(counted) < 0) invalid = true;
+      batchCounts.push({
+        batchIndex: Number($(this).attr("data-batch-index")),
+        batchNumber: $(this).attr("data-batch-number"),
+        expiryDate: $(this).attr("data-expiry-date"),
+        systemQuantity: Number($(this).attr("data-system-quantity")),
+        countedQuantity: Number(counted)
+      });
+    });
+    const untracked = row.find(".reconciliation-untracked-count").val();
+    if (untracked === "" || !Number.isFinite(Number(untracked)) || Number(untracked) < 0) invalid = true;
+    items.push({
+      productId: product._id, systemQuantity: Number(product.quantity || 0),
+      batchCounts, untrackedSystemQuantity: Number(row.find(".reconciliation-untracked-count").attr("data-system-quantity")),
+      untrackedCount: Number(untracked)
+    });
   });
-  if (!items.length || items.some(item => !item.productId || item.countedQuantity === "" || Number(item.countedQuantity) < 0)) return window.alert("Add valid products and physical counts first.");
+  if (invalid || !items.length) return window.alert("Select each product and enter a valid physical count for every batch and unbatched quantity.");
   reconciliationPreviewPayload = null;
   $("#commitReconciliation").prop("disabled", true);
   $.ajax({ url: importApi + "supplier-ledger/reconcile/preview", method: "POST", contentType: "application/json", data: JSON.stringify({ items }) })
     .done(result => {
       reconciliationPreviewPayload = result.preview;
-      const table = $('<table class="table table-bordered"><thead><tr><th>Product</th><th>System</th><th>Counted</th><th>Difference</th></tr></thead><tbody></tbody></table>');
-      (result.preview || []).forEach(row => table.find("tbody").append($('<tr></tr>').append($('<td></td>').text(row.productName), $('<td></td>').text(row.systemQuantity), $('<td></td>').text(row.countedQuantity), $('<td></td>').text(row.variance))));
+      const table = $('<table class="table table-bordered"><thead><tr><th>Product / batch</th><th>System</th><th>Counted</th><th>Difference</th></tr></thead><tbody></tbody></table>');
+      (result.preview || []).forEach(row => {
+        table.find("tbody").append($('<tr></tr>').append($('<td></td>').text(row.productName + " — total"), $('<td></td>').text(row.systemQuantity), $('<td></td>').text(row.countedQuantity), $('<td></td>').text(row.variance)));
+        (row.countedBatches || []).forEach((batch, index) => {
+          const before = (row.systemBatches || [])[index] || {};
+          table.find("tbody").append($('<tr></tr>').append($('<td></td>').text("  " + (batch.batchNumber || "Batch") + " / " + (batch.expiryDate || "No expiry")), $('<td></td>').text(before.quantity || 0), $('<td></td>').text(batch.quantity), $('<td></td>').text(Number(batch.quantity || 0) - Number(before.quantity || 0))));
+        });
+        if (Number(row.untrackedSystemQuantity || 0) || Number(row.untrackedCount || 0)) table.find("tbody").append($('<tr></tr>').append($('<td></td>').text("  Unbatched stock"), $('<td></td>').text(row.untrackedSystemQuantity), $('<td></td>').text(row.untrackedCount), $('<td></td>').text(Number(row.untrackedCount) - Number(row.untrackedSystemQuantity))));
+      });
       $("#reconciliationPreview").empty().append(table, $('<p class="text-warning"></p>').text(result.note || "Preview only; stock has not changed."));
       $("#commitReconciliation").prop("disabled", !result.preview || !result.preview.length);
     }).fail(xhr => $("#reconciliationPreview").text(xhr.responseJSON?.error || "Could not preview stock counts."));
@@ -196,13 +262,13 @@ $(function () {
   $("#refreshDistributorAccounts").on("click", loadDistributorAccounts);
   $("#refreshAdminAudit").on("click", loadAdminAuditTrail);
   $("#addReconciliationRow").on("click", addReconciliationRow);
-  $("#reconciliationTable").on("click", ".remove-reconciliation-row", function () { $(this).closest("tr").remove(); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
+  $("#reconciliationTable").on("click", ".remove-reconciliation-row", function () { $(this).closest("tr").remove(); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); $("#reconciliationPreview").empty(); });
   $("#previewReconciliation").on("click", previewReconciliation);
   $("a[href=\"#reconciliationPane\"]").on("shown.bs.tab", function () { loadReconciliationHistory(); if (!$("#reconciliationTable tbody tr").length) addReconciliationRow(); });
   $("#commitReconciliation").on("click", function () {
     if (!reconciliationPreviewPayload || !reconciliationPreviewPayload.length) return;
     if (!window.confirm("Apply these stock-count adjustments? This will change inventory and create an audit record.")) return;
-    const items = reconciliationPreviewPayload.map(row => ({ productId: row.productId, systemQuantity: row.systemQuantity, countedQuantity: row.countedQuantity }));
+    const items = reconciliationPreviewPayload.map(row => ({ productId: row.productId, systemQuantity: row.systemQuantity, untrackedSystemQuantity: row.untrackedSystemQuantity, untrackedCount: row.untrackedCount, batchCounts: (row.countedBatches || []).map((batch, index) => ({ batchIndex: batch.batchIndex, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, systemQuantity: (row.systemBatches || [])[index]?.quantity, countedQuantity: batch.quantity })) }));
     $.ajax({ url: importApi + "supplier-ledger/reconcile/commit", method: "POST", contentType: "application/json", data: JSON.stringify({ confirm: true, items }) })
       .done(result => { window.alert("Stock reconciliation saved. " + result.updated + " product(s) adjusted."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); $("#reconciliationPreview").empty(); $("#reconciliationTable tbody").empty(); loadReconciliationHistory(); })
       .fail(xhr => { window.alert(xhr.responseJSON?.error || "Reconciliation failed. Preview stock again."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
