@@ -214,4 +214,9 @@ app.get("/reconcile/history", async (_req, res) => {
   } catch (e) { res.status(500).json({ error: "Could not load reconciliation history." }); }
 });
 
-module.exports = { app, supplierDB, ledgerDB, recordLedger, getSupplier, summarizeLedger };
+async function getLedgerEvent(eventKey) {
+  const { result } = await call(ledgerDB, "findOne", { eventKey: String(eventKey || "") });
+  return result || null;
+}
+
+module.exports = { app, supplierDB, ledgerDB, recordLedger, getSupplier, summarizeLedger, getLedgerEvent };
