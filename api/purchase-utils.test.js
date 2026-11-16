@@ -1,4 +1,4 @@
-const { findReversalBatchIndex, calculatePurchaseTotal } = require("./purchase-utils");
+const { findReversalBatchIndex, calculatePurchaseTotal, planPurchaseReversal } = require("./purchase-utils");
 
 describe("purchase posting and reversal helpers", () => {
   test("targets an exact imported line even when batch labels are duplicated", () => {
@@ -22,4 +22,40 @@ describe("purchase posting and reversal helpers", () => {
     expect(calculatePurchaseTotal([{ quantity: 2, purchasePrice: 10.25 }, { quantity: 3, purchasePrice: 4 }])).toBe(32.5);
     expect(() => calculatePurchaseTotal([{ quantity: 0, purchasePrice: 5 }])).toThrow();
   });
+  test("plans a safe reversal and restores unchanged product metadata", () => {
+    const product = {
+      _id: 7, quantity: 12, price: "25", supplier: "Supplier A",
+      purchasePrice: "15", expirationDate: "2027-01-01",
+      batches: [{ importLineId: "line-1", batchNumber: "A", expiryDate: "2027-01-01", quantity: 2 }]
+    };
+    const item = {
+      importLineId: "line-1", quantity: 2,
+      postedProductFields: { price: "25", supplier: "Supplier A", purchasePrice: "15", expirationDate: "2027-01-01" },
+      previousProductFields: { price: "20", supplier: "Supplier Old", purchasePrice: "12", expirationDate: "2026-12-01" }
+    };
+    const plan = planPurchaseReversal(product, item);
+    expect(plan.nextQuantity).toBe(10);
+    expect(plan.nextBatches).toEqual([]);
+    expect(plan.restoreFields.price).toBe("20");
+  });
+
+  test("does not overwrite product pricing edited after the purchase", () => {
+    const product = {
+      _id: 7, quantity: 12, price: "30", supplier: "Supplier A",
+      purchasePrice: "15", expirationDate: "2027-01-01",
+      batches: [{ importLineId: "line-1", batchNumber: "A", expiryDate: "2027-01-01", quantity: 2 }]
+    };
+    const item = {
+      importLineId: "line-1", quantity: 2,
+      postedProductFields: { price: "25", supplier: "Supplier A", purchasePrice: "15", expirationDate: "2027-01-01" },
+      previousProductFields: { price: "20", supplier: "Supplier Old", purchasePrice: "12", expirationDate: "2026-12-01" }
+    };
+    expect(planPurchaseReversal(product, item).restoreFields).toEqual({});
+  });
+
+  test("blocks reversal when a purchased batch quantity has changed", () => {
+    const product = { _id: 7, quantity: 10, batches: [{ importLineId: "line-1", quantity: 1 }] };
+    expect(() => planPurchaseReversal(product, { importLineId: "line-1", quantity: 2 })).toThrow(/changed or been sold/);
+  });
+
 });
