@@ -293,7 +293,9 @@ const postPurchaseHandler = (req, res) => {
 };
 
 
-app.post("/commit-purchase", (req, res) => {
+app.post("/commit-purchase", async (req, res) => {
+  const admin = await authorizeAdmin(req);
+  if (!admin) return res.status(403).json({ error: "An active administrator account is required to create purchase drafts." });
   const body = req.body || {};
   const supplier = String(body.supplier || "").trim();
   const invoiceNo = String(body.invoiceNo || "").trim();
