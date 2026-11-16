@@ -307,7 +307,7 @@ app.get("/pending-purchases", async (req, res) => {
   try {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required." });
-    importsDB.find({ type: "purchase_draft", status: "pending_approval" }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
+    importsDB.find({ type: "purchase_draft", status: { $in: ["pending_approval", "approval_needs_reconciliation"] } }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
       if (err) return res.status(500).json({ error: "Could not load pending purchases." });
       res.json(drafts || []);
     });
@@ -327,7 +327,7 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
       const response = {
         status(code) { res.status(code); return this; },
         json(payload) {
-          const finalStatus = payload && payload.success ? "posted" : "pending_approval";
+          const finalStatus = payload && payload.success ? "posted" : payload && payload.rolledBack === false ? "approval_needs_reconciliation" : "pending_approval";
           const finish = () => importsDB.update({ _id: draft._id }, { $set: { status: finalStatus, approvalResult: payload, processedAt: new Date().toISOString() } }, {}, () => res.json({ ...payload, draftId: draft._id }));
           if (payload && payload.success) {
             writeAudit(req, "purchase_approved_and_posted", "purchase_draft", draft._id, { importId: payload.importId, appliedRows: payload.appliedRows })
