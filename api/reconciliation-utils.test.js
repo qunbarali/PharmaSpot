@@ -35,7 +35,7 @@ describe("batch-aware stock reconciliation", () => {
 
   test("requires every batch exactly once and rejects impossible batch totals", () => {
     expect(() => planProductReconciliation(product, { ...row, batchCounts: row.batchCounts.slice(0, 1) })).toThrow(/every batch/i);
-    expect(() => planProductReconciliation({ ...product, quantity: 10 }, row)).toThrow(/exceed total stock/i);
+    expect(() => planProductReconciliation({ ...product, quantity: 10 }, { ...row, systemQuantity: 10 })).toThrow(/exceed total stock/i);
   });
 
   test("preview returns per-batch differences and rejects duplicate products", () => {
