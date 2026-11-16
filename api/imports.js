@@ -10,7 +10,7 @@ const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
 const { writeAudit, authorizeAdmin } = require("./audit");
-const { planPurchaseReversal, calculatePurchaseTotal } = require("./purchase-utils");
+const { planPurchaseReversal, calculatePurchaseTotal, validatePurchaseDraft } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -25,6 +25,7 @@ const importsDB = new Datastore({
   autoload: true,
 });
 importsDB.ensureIndex({ fieldName: "importKey", unique: true, sparse: true });
+importsDB.ensureIndex({ fieldName: "draftKey", unique: true, sparse: true });
 
 const allowed = new Set([".pdf", ".zip", ".jpg", ".jpeg", ".png", ".webp"]);
 const storage = multer.diskStorage({
@@ -305,17 +306,18 @@ app.post("/commit-purchase", async (req, res) => {
   const admin = await authorizeAdmin(req);
   if (!admin) return res.status(403).json({ error: "An active administrator account is required to create purchase drafts." });
   const body = req.body || {};
-  const supplier = String(body.supplier || "").trim();
-  const invoiceNo = String(body.invoiceNo || "").trim();
-  const rows = Array.isArray(body.items) ? body.items : [];
-  if (!supplier || !invoiceNo || !rows.length) return res.status(400).json({ error: "Supplier, invoice number and line items are required for review." });
+  let validated;
+  try { validated = validatePurchaseDraft(body); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
+  const { supplier, invoiceNo, currency, baseCurrency, exchangeRate, items } = validated;
+  const draftKey = supplier.toLowerCase() + "|" + invoiceNo.toLowerCase();
   importsDB.insert({
-    type: "purchase_draft", status: "pending_approval", supplier, invoiceNo,
-    currency: String(body.currency || "").toUpperCase(), baseCurrency: String(body.baseCurrency || "PKR").toUpperCase(),
-    exchangeRate: Number(body.exchangeRate || 1), items: rows,
-    sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles : [],
+    type: "purchase_draft", status: "pending_approval", draftKey, supplier, invoiceNo,
+    currency, baseCurrency, exchangeRate, items,
+    sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && /^[a-f0-9-]+\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(file.storedName || "")).map(file => ({ originalName: String(file.originalName || "").slice(0, 200), storedName: file.storedName })) : [],
     createdAt: new Date().toISOString()
   }, (err, draft) => {
+    if (err && err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
     if (err) return res.status(500).json({ error: "Could not save purchase for approval." });
     writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, { supplier, invoiceNo, lineCount: rows.length })
       .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." }))
