@@ -41,8 +41,14 @@ async function extractImage(filePath) {
   if (!Tesseract) throw new Error("Image OCR is unavailable. Install the optional tesseract.js dependency and restart PharmaSpot.");
   const stat = fs.statSync(filePath);
   if (stat.size > 20 * 1024 * 1024) throw new Error("Image exceeds the 20 MB processing limit.");
-  const result = await Tesseract.recognize(filePath, "eng");
-  return normalizeText(result && result.data && result.data.text);
+  const dataPackage = path.dirname(require.resolve("@tesseract.js-data/eng/package.json"));
+  const worker = await Tesseract.createWorker("eng", 1, { langPath: path.join(dataPackage, "4.0.0_best_int") });
+  try {
+    const result = await worker.recognize(filePath);
+    return normalizeText(result && result.data && result.data.text);
+  } finally {
+    await worker.terminate();
+  }
 }
 async function extractInvoice(filePath) {
   const ext = path.extname(filePath).toLowerCase();
