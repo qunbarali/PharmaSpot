@@ -31,7 +31,7 @@ jobs:
         run: |
           if ($env:GITHUB_REF_NAME -ne "feature/ocr-distributor-stock-reconciliation") { throw "Run this workflow only on feature/ocr-distributor-stock-reconciliation." }
       - name: Regenerate package lock
-        run: npm install --package-lock-only --ignore-scripts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Commit regenerated package lock to this feature branch
         shell: pwsh
         run: |
@@ -43,6 +43,10 @@ jobs:
             git commit -m 'chore: regenerate package lock for invoice OCR'
             git push origin HEAD:feature/ocr-distributor-stock-reconciliation
           }
+      - name: Verify OCR dependencies are represented in the lockfile
+        shell: pwsh
+        run: |
+          node -e "const p=require('./package.json'); const l=require('./package-lock.json'); for (const n of ['pdf-parse','tesseract.js','@tesseract.js-data/eng','@napi-rs/canvas','pdfjs-dist']) { if (p.dependencies[n] && (l.packages[''].dependencies?.[n] !== p.dependencies[n] || !l.packages['node_modules/'+n])) { throw new Error('package-lock.json is missing a consistent entry for '+n); } }"
       - name: Install locked dependencies
         run: npm ci
       - name: Run automated tests
