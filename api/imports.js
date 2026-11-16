@@ -354,11 +354,15 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
   importsDB.findOne({ _id: req.params.importId, status: "posted" }, async (lookupError, record) => {
     if (lookupError) return res.status(500).json({ error: "Could not load purchase record." });
     if (!record) return res.status(404).json({ error: "Posted purchase not found or already reversed." });
-    const { result: locked } = await new Promise((resolve, reject) => importsDB.update(
-      { _id: record._id, status: "posted" },
-      { $set: { status: "reversing", reversalStartedAt: new Date().toISOString() } }, {},
-      (err, count) => err ? reject(err) : resolve({ result: count })
-    ));
+    let locked;
+    try {
+      const result = await new Promise((resolve, reject) => importsDB.update(
+        { _id: record._id, status: "posted" },
+        { $set: { status: "reversing", reversalStartedAt: new Date().toISOString() } }, {},
+        (err, count) => err ? reject(err) : resolve(count)
+      ));
+      locked = result;
+    } catch (_) { return res.status(500).json({ error: "Could not lock this purchase for reversal." }); }
     if (!locked) return res.status(409).json({ error: "This purchase reversal is already being processed." });
     const changes = [];
     try {
