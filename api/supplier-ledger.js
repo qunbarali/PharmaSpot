@@ -143,25 +143,14 @@ app.post("/reconcile/commit", async (req, res) => {
     const rows = Array.isArray(req.body && req.body.items) ? req.body.items : [];
     if (!rows.length || rows.length > 1000) throw new Error("Provide valid reconciliation rows.");
     const { result: products } = await call(inventoryDB, "find", {});
-    const preview = buildReconciliationPreview(products, rows.map(row => ({
-      productId: row.productId,
-      systemQuantity: row.systemQuantity,
-      untrackedSystemQuantity: row.untrackedSystemQuantity,
-      untrackedCount: row.untrackedCount,
-      batchCounts: (Array.isArray(row.batchCounts) ? row.batchCounts : []).map(batch => ({
-        batchIndex: batch.batchIndex, batchNumber: batch.batchNumber,
-        expiryDate: batch.expiryDate, systemQuantity: batch.systemQuantity,
-        countedQuantity: batch.countedQuantity
-      }))
-    })));
     const byId = new Map(products.map(product => [String(product._id), product]));
-    const plans = preview.map(row => planProductReconciliation(byId.get(String(row.productId)), {
-      productId: row.productId,
-      systemQuantity: row.systemQuantity,
-      untrackedSystemQuantity: row.untrackedSystemQuantity,
-      untrackedCount: row.untrackedCount,
-      batchCounts: row.batchCounts
-    }));
+    const seen = new Set();
+    const plans = rows.map(row => {
+      const id = String(row && row.productId || "");
+      if (!id || seen.has(id)) throw new Error("Each product may appear only once in a reconciliation.");
+      seen.add(id);
+      return planProductReconciliation(byId.get(id), row);
+    });
     const key = "reconcile:" + require("crypto").randomUUID();
     for (const plan of plans) {
       const { result: count } = await call(inventoryDB, "update",
