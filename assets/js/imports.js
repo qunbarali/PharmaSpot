@@ -9,6 +9,7 @@ const importApiPort = appSettings.port || process.env.PORT || "3210";
 const importApi = "http://" + importApiHost + ":" + importApiPort + "/api/";
 let importProducts = [];
 let stagedImages = [];
+let stagedInvoiceFiles = [];
 
 function loadImportProducts(done) {
   $.getJSON(importApi + "inventory/products")
@@ -60,11 +61,15 @@ $(function () {
   if (store.get("user") && Number(store.get("user").perm_products) === 0) $("#documentImportButton").hide();
   $("#documentImportButton").on("click", () => loadImportProducts(() => {}));
   $("#importCurrency").on("change", function () {
-    if (this.value === baseCurrency) $("#importExchangeRate").val("1");
+    if (this.value === baseCurrency) { $("#importExchangeRate").val("1"); return; }
+    const configuredForeignPerBase = Number((appSettings.exchangeRates || {})[this.value] || 0);
+    $("#importExchangeRate").val(configuredForeignPerBase > 0 ? (1 / configuredForeignPerBase).toFixed(6) : "");
   });
   $("#documentImportModal").on("shown.bs.modal", () => loadImportProducts(() => {
     if (!$("#purchaseImportTable tbody tr").length) addPurchaseRow();
   }));
+  $("#importCurrency").val(baseCurrency);
+  $("#importExchangeRate").val("1");
   $("#currencyCode").on("change", function () {
     const symbols = { PKR: "Rs", INR: "₹", USD: "$" };
     $("#symbol").val(symbols[this.value] || this.value);
@@ -72,6 +77,7 @@ $(function () {
   $("#addPurchaseImportRow").on("click", addPurchaseRow);
   $("#purchaseImportTable").on("click", ".remove-import-row", function () { $(this).closest("tr").remove(); });
   $("#uploadInvoiceFiles").on("click", () => uploadImportFiles("#invoiceFiles", "#invoiceUploadStatus", result => {
+    stagedInvoiceFiles = result.files || [];
     $("#invoiceUploadStatus").text(result.note || "Files staged. Enter and verify invoice details below.");
     loadImportProducts(() => { if (!$("#purchaseImportTable tbody tr").length) addPurchaseRow(); });
   }));
@@ -102,6 +108,7 @@ $(function () {
         invoiceNo: $("#importInvoiceNo").val(),
         currency: $("#importCurrency").val(),
         baseCurrency,
+        sourceFiles: stagedInvoiceFiles,
         exchangeRate: $("#importExchangeRate").val(),
         items
       }),
