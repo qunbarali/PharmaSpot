@@ -13,7 +13,9 @@ module.exports = {
         "node_modules/tesseract.js-core/**",
         "node_modules/@tesseract.js-data/eng/**",
         "node_modules/@napi-rs/**",
-        "node_modules/pdfjs-dist/legacy/build/**"
+        "node_modules/pdfjs-dist/legacy/build/**",
+        "node_modules/pdfjs-dist/cmaps/**",
+        "node_modules/pdfjs-dist/standard_fonts/**"
       ]
     },
     ignore: [
