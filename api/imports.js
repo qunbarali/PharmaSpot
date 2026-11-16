@@ -374,6 +374,10 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
   importsDB.findOne({ _id: req.params.importId, status: "posted" }, async (lookupError, record) => {
     if (lookupError) return res.status(500).json({ error: "Could not load purchase record." });
     if (!record) return res.status(404).json({ error: "Posted purchase not found or already reversed." });
+    let originalLedger;
+    try { originalLedger = await supplierLedger.getLedgerEvent("purchase:" + record._id); }
+    catch (_) { return res.status(503).json({ error: "Could not verify the original distributor ledger entry. Reversal was not started." }); }
+    if (!originalLedger) return res.status(409).json({ error: "The original purchase is missing its distributor ledger entry. Repair the supplier balance before reversing this invoice." });
     let locked;
     try {
       const result = await new Promise((resolve, reject) => importsDB.update(
