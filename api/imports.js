@@ -334,6 +334,7 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
       postPurchaseHandler({ body: draft }, response);
     });
   });
+  } catch (authError) { if (!res.headersSent) res.status(500).json({ error: "Could not verify purchase approver." }); }
 });
 
 
