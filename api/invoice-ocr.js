@@ -36,6 +36,7 @@ async function createOcrWorker() {
 }
 
 async function extractScannedPdf(filePath) {
+  let loadingTask;
   let pdfDocument;
   let worker;
   try {
@@ -45,7 +46,7 @@ async function extractScannedPdf(filePath) {
     const { pathToFileURL } = require("node:url");
     const assetUrl = (...segments) => pathToFileURL(path.resolve(pdfjsBuildDir, "..", "..", ...segments) + path.sep).href;
     const bytes = new Uint8Array(fs.readFileSync(filePath));
-    const loadingTask = pdfjs.getDocument({
+    loadingTask = pdfjs.getDocument({
       data: bytes,
       cMapUrl: assetUrl("cmaps"),
       cMapPacked: true,
@@ -87,7 +88,7 @@ async function extractScannedPdf(filePath) {
     throw new Error("Scanned-PDF OCR could not start. Check the PDF renderer, canvas and English OCR dependencies: " + (error.message || "unknown error"));
   } finally {
     if (worker) await worker.terminate();
-    if (pdfDocument) await pdfDocument.destroy();
+    if (loadingTask) await loadingTask.destroy();
   }
 }
 
