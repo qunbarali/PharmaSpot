@@ -220,7 +220,7 @@ app.post("/commit-purchase", (req, res) => {
           batches,
         };
         inventoryDB.update({ _id: productId, quantity: Number(product.quantity || 0) }, { $set: updateFields }, {}, (updateError, count) => {
-          if (updateError || !count) return next(updateError || new Error("Stock changed during purchase posting."));
+          if (updateError || !count) { snapshots.pop(); return next(updateError || new Error("Stock changed during purchase posting.")); }
           snapshot.after = { ...JSON.parse(JSON.stringify(product)), ...updateFields };
           applied.push({ productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate });
           next();
