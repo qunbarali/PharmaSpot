@@ -301,32 +301,38 @@ app.post("/product/sku", function (req, res) {
  */
 app.decrementInventory = function (products) {
     async.eachSeries(products, function (transactionProduct, callback) {
-        inventoryDB.findOne(
-            {
-                _id: parseInt(transactionProduct.id),
-            },
-            function (err, product) {
-                if (!product || !product.quantity) {
-                    callback();
-                } else {
-                    let updatedQuantity =
-                        parseInt(product.quantity) -
-                        parseInt(transactionProduct.quantity);
-
-                    inventoryDB.update(
-                        {
-                            _id: parseInt(product._id),
-                        },
-                        {
-                            $set: {
-                                quantity: updatedQuantity,
-                            },
-                        },
-                        {},
-                        callback,
-                    );
-                }
-            },
-        );
+        inventoryDB.findOne({ _id: parseInt(transactionProduct.id) }, function (err, product) {
+            if (err) return callback(err);
+            if (!product) return callback();
+            const soldQuantity = Number(transactionProduct.quantity);
+            const currentQuantity = Number(product.quantity || 0);
+            if (!Number.isFinite(soldQuantity) || soldQuantity <= 0) return callback();
+            const updated = { quantity: Math.max(0, currentQuantity - soldQuantity) };
+            if (Array.isArray(product.batches) && product.batches.length) {
+                let remaining = soldQuantity;
+                const batches = product.batches.map(batch => ({ ...batch }));
+                const ordered = batches.slice().sort((a, b) => {
+                    const aDate = Date.parse(a.expiryDate) || Number.MAX_SAFE_INTEGER;
+                    const bDate = Date.parse(b.expiryDate) || Number.MAX_SAFE_INTEGER;
+                    return aDate - bDate;
+                });
+                ordered.forEach(batch => {
+                    if (remaining <= 0) return;
+                    const available = Math.max(0, Number(batch.quantity || 0));
+                    const used = Math.min(available, remaining);
+                    batch.quantity = available - used;
+                    remaining -= used;
+                });
+                updated.batches = batches;
+            }
+            inventoryDB.update(
+                { _id: product._id },
+                { $set: updated },
+                {},
+                callback,
+            );
+        });
+    }, function (err) {
+        if (err) console.error("Could not fully update batch stock after sale:", err);
     });
 };
