@@ -48,6 +48,28 @@ jobs:
       - name: Build Windows installers
         if: inputs.package_windows
         run: npm run make
+      - name: Verify Windows installer artifacts and write checksums
+        if: inputs.package_windows
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path "out/make" -Recurse -File -ErrorAction SilentlyContinue
+          $installers = $files | Where-Object { $_.Name -match 'Setup\\.exe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmaspot-verification-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            package-lock.json
+            out/**
+            windows-build-sha256.txt
+ -or $_.Extension -eq '.msi' }
+          if (-not $installers) { throw "No Windows Setup.exe or MSI installer was produced." }
+          $files | Get-FileHash -Algorithm SHA256 | ForEach-Object {
+            "$($_.Hash)  $($_.Path)" | Out-File -FilePath "windows-build-sha256.txt" -Append -Encoding utf8
+          }
+          Write-Host "Verified Windows installer artifacts:"
+          $installers | ForEach-Object { Write-Host $_.FullName }
       - name: Upload verification outputs
         if: always()
         uses: actions/upload-artifact@v4
