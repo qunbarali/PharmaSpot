@@ -6,7 +6,7 @@ const bcrypt = require("bcrypt");
 const saltRounds = 10;
 const validator = require("validator");
 const path = require("path");
-const { issueSession, authenticateUser, revokeSession } = require("./audit");
+const { issueSession, authenticateUser, revokeSession, authorizeAdmin } = require("./audit");
 const dbPath = path.join(
     process.env.APPDATA,
     process.env.APPNAME,
@@ -51,7 +51,12 @@ app.get("/", function (req, res) {
  * @param {Object} res response object.
  * @returns {void}
  */
-app.get("/user/:userId", function (req, res) {
+app.get("/user/:userId", async function (req, res) {
+    try {
+    const authenticated = await authenticateUser(req);
+    const isSelf = authenticated && String(authenticated._id) === String(req.params.userId);
+    const isAdmin = authenticated && Number(authenticated.perm_users) === 1;
+    if (!isSelf && !isAdmin) return res.status(403).json({ error: "A valid session for this user or an administrator session is required." });
     if (!req.params.userId) {
         res.status(500).send("ID field is required.");
     } else {
@@ -60,10 +65,13 @@ app.get("/user/:userId", function (req, res) {
                 _id: parseInt(req.params.userId),
             },
             function (err, docs) {
+                if (err) return res.status(500).json({ error: "Could not load user." });
+                if (!docs) return res.sendStatus(404);
                 res.send(publicUser(docs));
             },
         );
     }
+    } catch (_) { res.status(500).json({ error: "Could not verify user session." }); }
 });
 
 /**
@@ -127,10 +135,15 @@ app.post("/login", async function (req, res) {
  * @param {Object} res response object.
  * @returns {void}
  */
-app.get("/all", function (req, res) {
-    usersDB.find({}, function (err, docs) {
-        res.send((docs || []).map(publicUser));
-    });
+app.get("/all", async function (req, res) {
+    try {
+        const admin = await authorizeAdmin(req);
+        if (!admin) return res.status(403).json({ error: "Administrator permission is required." });
+        usersDB.find({}, function (err, docs) {
+            if (err) return res.status(500).json({ error: "Could not load users." });
+            res.send((docs || []).map(publicUser));
+        });
+    } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
 
 /**
@@ -140,7 +153,10 @@ app.get("/all", function (req, res) {
  * @param {Object} res response object.
  * @returns {void}
  */
-app.delete("/user/:userId", function (req, res) {
+app.delete("/user/:userId", async function (req, res) {
+    try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "Administrator permission is required." });
     usersDB.remove(
         {
             _id: parseInt(req.params.userId),
@@ -157,6 +173,7 @@ app.delete("/user/:userId", function (req, res) {
             }
         },
     );
+    } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
 
 /**
@@ -166,7 +183,10 @@ app.delete("/user/:userId", function (req, res) {
  * @param {Object} res response object.
  * @returns {void}
  */
-app.post("/post", function (req, res) {
+app.post("/post", async function (req, res) {
+    try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "Administrator permission is required." });
     //encrypt password
     bcrypt
         .hash(req.body.password, saltRounds)
@@ -246,6 +266,7 @@ app.post("/post", function (req, res) {
                     message: `An unexpected error occurred. ${err}`,
                 });
         });
+    } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
 
 /**
@@ -256,6 +277,10 @@ app.post("/post", function (req, res) {
  * @returns {void}
  */
 app.get("/check", function (req, res) {
+    const remote = String(req.socket && req.socket.remoteAddress || "");
+    if (!(remote === "::1" || remote === "127.0.0.1" || remote.startsWith("::ffff:127."))) {
+        return res.status(403).json({ error: "Initial administrator setup is available only on the main PharmaSpot computer." });
+    }
     usersDB.findOne(
         {
             _id: 1,
