@@ -190,7 +190,7 @@ $(function () {
   $("#addReconciliationRow").on("click", addReconciliationRow);
   $("#reconciliationTable").on("click", ".remove-reconciliation-row", function () { $(this).closest("tr").remove(); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
   $("#previewReconciliation").on("click", previewReconciliation);
-  $("#reconciliationPane").on("shown.bs.tab", function () { loadReconciliationHistory(); if (!$("#reconciliationTable tbody tr").length) addReconciliationRow(); });
+  $("a[href=\"#reconciliationPane\"]").on("shown.bs.tab", function () { loadReconciliationHistory(); if (!$("#reconciliationTable tbody tr").length) addReconciliationRow(); });
   $("#commitReconciliation").on("click", function () {
     if (!reconciliationPreviewPayload || !reconciliationPreviewPayload.length) return;
     if (!window.confirm("Apply these stock-count adjustments? This will change inventory and create an audit record.")) return;
@@ -199,13 +199,13 @@ $(function () {
       .done(result => { window.alert("Stock reconciliation saved. " + result.updated + " product(s) adjusted."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); $("#reconciliationPreview").empty(); $("#reconciliationTable tbody").empty(); loadReconciliationHistory(); })
       .fail(xhr => { window.alert(xhr.responseJSON?.error || "Reconciliation failed. Preview stock again."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
   });
-  $("#distributorPane").on("shown.bs.tab", function () { loadDistributorAccounts(); loadPendingPurchaseDrafts(); loadPurchaseImportHistory(); loadAdminAuditTrail(); });
+  $("a[href=\"#distributorPane\"]").on("shown.bs.tab", function () { loadDistributorAccounts(); loadPendingPurchaseDrafts(); loadPurchaseImportHistory(); loadAdminAuditTrail(); });
   $("#saveDistributorPayment").on("click", function () {
     const payload = { supplier: $("#distributorPaymentName").val(), amount: $("#distributorPaymentAmount").val(), currency: $("#distributorPaymentCurrency").val(), reference: $("#distributorPaymentReference").val() };
     if (!payload.supplier || !(Number(payload.amount) > 0)) return window.alert("Enter a distributor and a valid payment amount.");
     if (!window.confirm("Record this payment in the distributor ledger?")) return;
     $.ajax({ url: importApi + "supplier-ledger/payment", method: "POST", contentType: "application/json", data: JSON.stringify(payload) })
-      .done(() => { window.alert("Distributor payment recorded."); $("#distributorPaymentAmount,#distributorPaymentReference").val(""); loadDistributorAccounts(); })
+      .done(() => { window.alert("Distributor payment recorded."); $("#distributorPaymentAmount,#distributorPaymentReference").val(""); loadDistributorAccounts(); loadAdminAuditTrail(); })
       .fail(xhr => window.alert(xhr.responseJSON?.error || "Could not record payment."));
   });
   $("#importCurrency").on("change", function () {
