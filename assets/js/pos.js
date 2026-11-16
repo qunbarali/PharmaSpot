@@ -210,7 +210,8 @@ if (auth == undefined) {
 
   $.get(api + "settings/get", function (data) {
     settings = data.settings;
-    const currency = settings && settings.currencyCode ? settings.currencyCode : "PKR";
+    const legacySymbol = String(settings && settings.symbol || "").trim().toUpperCase();
+    const currency = settings && settings.currencyCode ? settings.currencyCode : (["USD", "$"].includes(legacySymbol) ? "USD" : (["INR", "₹"].includes(legacySymbol) ? "INR" : "PKR"));
     const locale = { PKR: "en-PK", INR: "en-IN", USD: "en-US" }[currency] || "en-PK";
     process.env.PHARMA_CURRENCY_LOCALE = locale;
     const symbol = { PKR: "Rs", INR: "₹", USD: "$" }[currency] || settings.symbol || "Rs";
