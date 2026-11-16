@@ -8,7 +8,7 @@ function planProductReconciliation(product, row) {
   const batches = Array.isArray(product.batches) ? product.batches : [];
   const currentQuantity = number(product.quantity || 0);
   if (currentQuantity !== number(row.systemQuantity)) throw new Error("Stock changed after preview. Generate a new preview.");
-  if (!Array.isArray(row.batchCounts) || row.batchCounts.length !== batches.length) throw new Error("Batch list changed or is incomplete. Generate a new preview.");
+  if (!Array.isArray(row.batchCounts) || row.batchCounts.length !== batches.length) throw new Error("Every batch must be counted exactly once. The batch list changed or is incomplete; generate a new preview.");
   const batchCounts = new Map();
   for (const entry of row.batchCounts) {
     const index = Number(entry.batchIndex);
