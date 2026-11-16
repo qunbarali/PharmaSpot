@@ -446,19 +446,27 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
   } catch (authError) { if (!res.headersSent) res.status(500).json({ error: "Could not verify purchase reversal administrator." }); }
 });
 
-app.get("/file/:storedName", (req, res) => {
-  const storedName = path.basename(String(req.params.storedName || ""));
-  if (!storedName || storedName !== req.params.storedName) return res.sendStatus(400);
-  const filePath = path.join(importRoot, storedName);
-  if (!fs.existsSync(filePath)) return res.sendStatus(404);
-  res.sendFile(filePath);
+app.get("/file/:storedName", async (req, res) => {
+  try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to view imported documents." });
+    const storedName = path.basename(String(req.params.storedName || ""));
+    if (!storedName || storedName !== req.params.storedName) return res.sendStatus(400);
+    const filePath = path.join(importRoot, storedName);
+    if (!fs.existsSync(filePath)) return res.sendStatus(404);
+    res.sendFile(filePath);
+  } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
 
-app.get("/history", (_req, res) => {
-  importsDB.find({}).sort({ createdAt: -1 }).limit(100).exec((err, docs) => {
-    if (err) return res.status(500).json({ error: "Could not load import history." });
-    res.json(docs || []);
-  });
+app.get("/history", async (req, res) => {
+  try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to view import history." });
+    importsDB.find({}).sort({ createdAt: -1 }).limit(100).exec((err, docs) => {
+      if (err) return res.status(500).json({ error: "Could not load import history." });
+      res.json(docs || []);
+    });
+  } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
 
 module.exports = app;
