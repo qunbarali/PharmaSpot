@@ -46,7 +46,7 @@ express.use("/api/settings", require("./api/settings"));
 express.use("/api/users", require("./api/users"));
 express.use("/api", require("./api/transactions"));
 
-server.listen(PORT, "127.0.0.1", () => {
+server.listen(PORT, () => {
     process.env.PORT = server.address().port;
     console.log("Listening on PORT", process.env.PORT);
 });
