@@ -388,7 +388,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
         if (saveError || !count) return res.status(500).json({ error: "Stock reversal was applied but its import status could not be updated. Contact an administrator before further changes.", reversalLedgerId: reversal && reversal.eventKey });
         writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), adjustedProducts: changes.length })
           .then(() => res.json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length }))
-          .catch(() => res.status(500).json({ error: "Purchase reversal completed but audit logging failed. Contact an administrator." }));
+          .catch(() => res.status(207).json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length, warning: "Reversal completed but audit logging failed. Contact an administrator." }));
       });
     } catch (error) {
       let rollbackError = null;
