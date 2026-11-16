@@ -242,6 +242,12 @@ const postPurchaseHandler = (req, res) => {
         };
         const snapshot = { before: JSON.parse(JSON.stringify(product)), after: null };
         snapshots.push(snapshot);
+        const previousProductFields = {
+          price: product.price,
+          supplier: product.supplier,
+          purchasePrice: product.purchasePrice,
+          expirationDate: product.expirationDate
+        };
         const batches = Array.isArray(product.batches) ? product.batches.concat([batch]) : [batch];
         const newQuantity = Number(product.quantity || 0) + quantity;
         const updateFields = {
@@ -252,10 +258,12 @@ const postPurchaseHandler = (req, res) => {
           expirationDate: expiryDate,
           batches,
         };
-        inventoryDB.update({ _id: productId, quantity: Number(product.quantity || 0) }, { $set: updateFields }, {}, (updateError, count) => {
+        const selector = { _id: productId, quantity: Number(product.quantity || 0) };
+        selector.batches = Array.isArray(product.batches) ? product.batches : { $exists: false };
+        inventoryDB.update(selector, { $set: updateFields }, {}, (updateError, count) => {
           if (updateError || !count) { snapshots.pop(); return next(updateError || new Error("Stock changed during purchase posting.")); }
           snapshot.after = { ...JSON.parse(JSON.stringify(product)), ...updateFields };
-          applied.push({ importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate });
+          applied.push({ importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate, previousProductFields });
           next();
         });
       });
@@ -378,7 +386,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
     if (!locked) return res.status(409).json({ error: "This purchase reversal is already being processed." });
     const changes = [];
     try {
-      for (const item of (record.items || [])) {
+      for (const item of (record.items || []).slice().reverse()) {
         const { result: product } = await new Promise((resolve, reject) => inventoryDB.findOne({ _id: item.productId }, (err, doc) => err ? reject(err) : resolve({ result: doc })));
         if (!product) throw new Error("A product from this invoice no longer exists; use stock reconciliation instead.");
         const batches = Array.isArray(product.batches) ? product.batches : [];
@@ -391,9 +399,16 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
         const nextBatches = batches.slice();
         nextBatches.splice(index, 1);
         const nextQuantity = Number(product.quantity || 0) - quantity;
+        const remainingLatestBatch = nextBatches.length ? nextBatches[nextBatches.length - 1] : null;
+        const restoreFields = item.previousProductFields || (remainingLatestBatch ? {
+          price: remainingLatestBatch.baseSalePrice,
+          supplier: remainingLatestBatch.supplier,
+          purchasePrice: remainingLatestBatch.basePurchasePrice,
+          expirationDate: remainingLatestBatch.expiryDate
+        } : {});
         const { result: count } = await new Promise((resolve, reject) => inventoryDB.update(
           { _id: product._id, quantity: Number(product.quantity || 0), batches },
-          { $set: { quantity: nextQuantity, batches: nextBatches } }, {}, (err, n) => err ? reject(err) : resolve({ result: n })
+          { $set: { quantity: nextQuantity, batches: nextBatches, ...restoreFields } }, {}, (err, n) => err ? reject(err) : resolve({ result: n })
         ));
         if (!count) throw new Error("Stock changed during reversal; retry after refreshing inventory.");
         changes.push({ productId: product._id, before, afterQuantity: nextQuantity, afterBatches: nextBatches });
@@ -405,7 +420,10 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
         eventKey: "purchase-reversal:" + record._id
       }));
       importsDB.update({ _id: record._id, status: "reversing" }, { $set: { status: "reversed", reversedAt: new Date().toISOString(), reversalReason: String(req.body.reason).slice(0, 300), reversalChanges: changes.map(change => ({ productId: change.productId, quantityBefore: change.before.quantity, quantityAfter: change.afterQuantity })) } }, {}, (saveError, count) => {
-        if (saveError || !count) return res.status(500).json({ error: "Stock reversal was applied but its import status could not be updated. Contact an administrator before further changes.", reversalLedgerId: reversal && reversal.eventKey });
+        if (saveError || !count) {
+          importsDB.update({ _id: record._id, status: "reversing" }, { $set: { status: "reversal_needs_reconciliation", reversalLedgerId: reversal && reversal.eventKey, reversalFailure: "Stock and distributor ledger were reversed, but purchase history status could not be saved.", reversalFailedAt: new Date().toISOString() } }, {}, () => {});
+          return res.status(500).json({ error: "Stock and distributor ledger were reversed but purchase history needs manual reconciliation. Do not retry this reversal.", reversalLedgerId: reversal && reversal.eventKey });
+        }
         writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), adjustedProducts: new Set(changes.map(change => String(change.productId))).size })
           .then(() => res.json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length }))
           .catch(() => res.status(207).json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length, warning: "Reversal completed but audit logging failed. Contact an administrator." }));
