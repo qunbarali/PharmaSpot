@@ -24,7 +24,7 @@ express.use(function (req, res, next) {
     res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
     res.header(
         "Access-Control-Allow-Headers",
-        "Content-type,Accept,X-Access-Token,X-Key",
+        "Content-type,Accept,X-Access-Token,X-Key,X-Pharmaspot-User,X-Pharmaspot-User-Id",
     );
     if (req.method == "OPTIONS") {
         res.status(200).end();
@@ -46,7 +46,7 @@ express.use("/api/settings", require("./api/settings"));
 express.use("/api/users", require("./api/users"));
 express.use("/api", require("./api/transactions"));
 
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
     process.env.PORT = server.address().port;
     console.log("Listening on PORT", process.env.PORT);
 });
