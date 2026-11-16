@@ -7,7 +7,7 @@ const optionalRequire = name => { try { return require(name); } catch (_) { retu
 
 function normalizeText(value) {
   return String(value || "").replace(/\r/g, "\n").replace(/[\t\f\v]+/g, " ")
-    .replace(/[ ]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, MAX_TEXT_CHARS);
+    .replace(/[ ]{2,}/g, " ").replace(/[ ]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, MAX_TEXT_CHARS);
 }
 function parseInvoiceText(raw) {
   const text = normalizeText(raw);
