@@ -206,20 +206,22 @@ function loadPendingPurchaseDrafts() {
 function loadPurchaseImportHistory() {
   $.getJSON(importApi + "imports/history").done(records => {
     const list = $('<div class="list-group"></div>');
-    (records || []).filter(record => ["posted", "reversed"].includes(record.status) && record.type !== "purchase_draft").forEach(record => {
+    (records || []).filter(record => ["posted", "reversed", "reversing", "reversal_needs_reconciliation"].includes(record.status) && record.type !== "purchase_draft").forEach(record => {
       const item = $('<div class="list-group-item"></div>');
       item.append($('<strong></strong>').text(record.supplier + " — invoice " + record.invoiceNo + " — " + record.status));
       item.append($('<p class="small text-muted"></p>').text(new Date(record.createdAt).toLocaleString() + " | " + (record.items || []).length + " line(s)"));
       const reverse = $('<button class="btn btn-warning btn-xs" type="button">Reverse purchase</button>');
       reverse.prop("disabled", record.status !== "posted");
       if (record.status === "reversed") reverse.text("Already reversed");
+      if (record.status === "reversing") reverse.text("Reversal in progress");
+      if (record.status === "reversal_needs_reconciliation") reverse.text("Manual reconciliation required");
       reverse.on("click", () => {
         const reason = window.prompt("Enter the reason for reversing invoice " + record.invoiceNo + ". Reversal is blocked if any purchased batch has changed or been sold.");
         if (!reason || !reason.trim()) return;
         if (!window.confirm("Reverse this purchase and adjust stock and distributor balance?")) return;
         $.ajax({ url: importApi + "imports/reverse-purchase/" + encodeURIComponent(record._id), method: "POST", contentType: "application/json", data: JSON.stringify({ confirm: true, reason }) })
           .done(() => { window.alert("Purchase reversal completed."); loadPurchaseImportHistory(); loadDistributorAccounts(); loadAdminAuditTrail(); })
-          .fail(xhr => window.alert(xhr.responseJSON?.error || "Purchase reversal was blocked."));
+          .fail(xhr => { window.alert(xhr.responseJSON?.error || "Purchase reversal was blocked."); loadPurchaseImportHistory(); loadDistributorAccounts(); loadAdminAuditTrail(); });
       });
       item.append(reverse); list.append(item);
     });
