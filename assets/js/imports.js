@@ -110,6 +110,26 @@ function previewReconciliation() {
       $("#commitReconciliation").prop("disabled", !result.preview || !result.preview.length);
     }).fail(xhr => $("#reconciliationPreview").text(xhr.responseJSON?.error || "Could not preview stock counts."));
 }
+function loadPendingPurchaseDrafts() {
+  $.getJSON(importApi + "imports/pending-purchases").done(drafts => {
+    const list = $('<div class="list-group"></div>');
+    (drafts || []).forEach(draft => {
+      const item = $('<div class="list-group-item"></div>');
+      item.append($('<strong></strong>').text(draft.supplier + " — invoice " + draft.invoiceNo));
+      item.append($('<p class="small text-muted"></p>').text((draft.items || []).length + " line(s) | " + new Date(draft.createdAt).toLocaleString()));
+      const approve = $('<button class="btn btn-success btn-xs" type="button">Approve and post</button>');
+      approve.on("click", () => {
+        if (!window.confirm("Approve invoice " + draft.invoiceNo + " from " + draft.supplier + " and update stock and supplier balance?")) return;
+        $.ajax({ url: importApi + "imports/approve-purchase/" + encodeURIComponent(draft._id), method: "POST", contentType: "application/json", data: JSON.stringify({ confirm: true }) })
+          .done(result => { window.alert("Purchase approved. " + result.appliedRows + " line(s) posted."); loadPendingPurchaseDrafts(); loadPurchaseImportHistory(); loadDistributorAccounts(); loadAdminAuditTrail(); })
+          .fail(xhr => window.alert(xhr.responseJSON?.error || "Could not approve this purchase."));
+      });
+      item.append(approve); list.append(item);
+    });
+    if (!list.children().length) list.text("No purchase drafts awaiting approval.");
+    $("#pendingPurchaseDrafts").empty().append(list);
+  }).fail(xhr => $("#pendingPurchaseDrafts").text(xhr.status === 403 ? "Administrator account required to view pending approvals." : "Could not load pending purchase approvals."));
+}
 function loadPurchaseImportHistory() {
   $.getJSON(importApi + "imports/history").done(records => {
     const list = $('<div class="list-group"></div>');
@@ -179,7 +199,7 @@ $(function () {
       .done(result => { window.alert("Stock reconciliation saved. " + result.updated + " product(s) adjusted."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); $("#reconciliationPreview").empty(); $("#reconciliationTable tbody").empty(); loadReconciliationHistory(); })
       .fail(xhr => { window.alert(xhr.responseJSON?.error || "Reconciliation failed. Preview stock again."); reconciliationPreviewPayload = null; $("#commitReconciliation").prop("disabled", true); });
   });
-  $("#distributorPane").on("shown.bs.tab", function () { loadDistributorAccounts(); loadPurchaseImportHistory(); loadAdminAuditTrail(); });
+  $("#distributorPane").on("shown.bs.tab", function () { loadDistributorAccounts(); loadPendingPurchaseDrafts(); loadPurchaseImportHistory(); loadAdminAuditTrail(); });
   $("#saveDistributorPayment").on("click", function () {
     const payload = { supplier: $("#distributorPaymentName").val(), amount: $("#distributorPaymentAmount").val(), currency: $("#distributorPaymentCurrency").val(), reference: $("#distributorPaymentReference").val() };
     if (!payload.supplier || !(Number(payload.amount) > 0)) return window.alert("Enter a distributor and a valid payment amount.");
