@@ -99,11 +99,23 @@ async function extractPdf(filePath) {
 async function extractImage(filePath) {
   const stat = fs.statSync(filePath);
   if (stat.size > 20 * 1024 * 1024) throw new Error("Image exceeds the 20 MB processing limit.");
+  const { createCanvas, loadImage } = require("@napi-rs/canvas");
+  const image = await loadImage(filePath);
+  if (!image.width || !image.height) throw new Error("The uploaded image has invalid dimensions.");
+  const pixels = image.width * image.height;
+  const scale = Math.min(1, Math.sqrt(12000000 / pixels));
+  const width = Math.max(1, Math.floor(image.width * scale));
+  const height = Math.max(1, Math.floor(image.height * scale));
+  const canvas = createCanvas(width, height);
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, width, height);
   const worker = await createOcrWorker();
   try {
-    const result = await worker.recognize(filePath);
+    const result = await worker.recognize(canvas.toBuffer("image/png"));
     return normalizeText(result && result.data && result.data.text);
   } finally {
+    canvas.width = 0;
+    canvas.height = 0;
     await worker.terminate();
   }
 }
