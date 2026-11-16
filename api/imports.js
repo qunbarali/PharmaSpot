@@ -354,6 +354,12 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
   importsDB.findOne({ _id: req.params.importId, status: "posted" }, async (lookupError, record) => {
     if (lookupError) return res.status(500).json({ error: "Could not load purchase record." });
     if (!record) return res.status(404).json({ error: "Posted purchase not found or already reversed." });
+    const { result: locked } = await new Promise((resolve, reject) => importsDB.update(
+      { _id: record._id, status: "posted" },
+      { $set: { status: "reversing", reversalStartedAt: new Date().toISOString() } }, {},
+      (err, count) => err ? reject(err) : resolve({ result: count })
+    ));
+    if (!locked) return res.status(409).json({ error: "This purchase reversal is already being processed." });
     const changes = [];
     try {
       for (const item of (record.items || [])) {
@@ -382,7 +388,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
         reference: record.invoiceNo, importId: record._id, note: String(req.body.reason).slice(0, 300),
         eventKey: "purchase-reversal:" + record._id
       }));
-      importsDB.update({ _id: record._id, status: "posted" }, { $set: { status: "reversed", reversedAt: new Date().toISOString(), reversalReason: String(req.body.reason).slice(0, 300), reversalChanges: changes.map(change => ({ productId: change.productId, quantityBefore: change.before.quantity, quantityAfter: change.afterQuantity })) } }, {}, (saveError, count) => {
+      importsDB.update({ _id: record._id, status: "reversing" }, { $set: { status: "reversed", reversedAt: new Date().toISOString(), reversalReason: String(req.body.reason).slice(0, 300), reversalChanges: changes.map(change => ({ productId: change.productId, quantityBefore: change.before.quantity, quantityAfter: change.afterQuantity })) } }, {}, (saveError, count) => {
         if (saveError || !count) return res.status(500).json({ error: "Stock reversal was applied but its import status could not be updated. Contact an administrator before further changes.", reversalLedgerId: reversal && reversal.eventKey });
         writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), adjustedProducts: new Set(changes.map(change => String(change.productId))).size })
           .then(() => res.json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length }))
@@ -399,6 +405,11 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
           if (!count) rollbackError = new Error("Concurrent change prevented reversal rollback.");
         } catch (e) { rollbackError = e; }
       }
+      await new Promise(resolve => importsDB.update(
+        { _id: record._id, status: "reversing" },
+        { $set: { status: rollbackError ? "reversal_needs_reconciliation" : "posted", reversalFailure: String(error.message || "Reversal failed").slice(0, 300), reversalFailedAt: new Date().toISOString() } },
+        {}, () => resolve()
+      ));
       res.status(409).json({ error: error.message, rolledBack: !rollbackError, rollbackError: rollbackError ? "Manual stock reconciliation is required." : undefined });
     }
   });
