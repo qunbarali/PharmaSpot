@@ -152,6 +152,10 @@ app.post("/commit-purchase", (req, res) => {
     if (lookupError) return res.status(500).json({ error: "Could not check duplicate invoices." });
     if (duplicate) return res.status(409).json({ error: "This supplier invoice has already been imported.", importId: duplicate._id });
     let applied = [];
+    const snapshots = [];
+    const rollbackApplied = (done) => async.eachSeries(snapshots.slice().reverse(), (snapshot, next) => {
+      inventoryDB.update({ _id: snapshot._id }, snapshot, {}, next);
+    }, done);
     async.eachSeries(rows, (row, next) => {
       const productId = Number(row.productId);
       const quantity = Number(row.quantity);
@@ -179,6 +183,7 @@ app.post("/commit-purchase", (req, res) => {
           invoiceNo,
           receivedAt: new Date().toISOString(),
         };
+        snapshots.push(JSON.parse(JSON.stringify(product)));
         const batches = Array.isArray(product.batches) ? product.batches.concat([batch]) : [batch];
         const newQuantity = Number(product.quantity || 0) + quantity;
         inventoryDB.update({ _id: productId }, { $set: {
@@ -195,7 +200,7 @@ app.post("/commit-purchase", (req, res) => {
         });
       });
     }, (error) => {
-      if (error) return res.status(400).json({ error: error.message, appliedRows: applied, warning: applied.length ? "Some rows were applied before the error. Reconcile stock before retrying." : undefined });
+      if (error) return rollbackApplied((rollbackError) => res.status(400).json({ error: error.message, rolledBack: !rollbackError, rollbackError: rollbackError ? "Stock rollback needs manual reconciliation." : undefined }));
       importsDB.insert({
         importKey,
         supplier,
@@ -204,11 +209,11 @@ app.post("/commit-purchase", (req, res) => {
         baseCurrency,
         exchangeRate: rate,
         items: applied,
-        sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && /^[a-f0-9-]+\\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(file.storedName || "")).map(file => ({ originalName: String(file.originalName || "").slice(0, 200), storedName: file.storedName })) : [],
+        sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && /^[a-f0-9-]+\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(file.storedName || "")).map(file => ({ originalName: String(file.originalName || "").slice(0, 200), storedName: file.storedName })) : [],
         createdAt: new Date().toISOString(),
         status: "posted",
       }, (saveError, record) => {
-        if (saveError) return res.status(500).json({ error: "Stock was updated but import history could not be saved. Reconcile before retrying." });
+        if (saveError) return rollbackApplied((rollbackError) => res.status(500).json({ error: "Import history could not be saved; stock changes were rolled back.", rolledBack: !rollbackError, rollbackError: rollbackError ? "Stock rollback needs manual reconciliation." : undefined }));
         res.json({ success: true, importId: record._id, appliedRows: applied.length });
       });
     });
