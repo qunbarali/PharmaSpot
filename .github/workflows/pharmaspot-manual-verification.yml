@@ -56,9 +56,11 @@ jobs:
       - name: Verify OCR dependencies are represented in the lockfile
         shell: pwsh
         run: |
-          node -e "const p=require('./package.json'); const l=require('./package-lock.json'); for (const n of ['pdf-parse','tesseract.js','@tesseract.js-data/eng','@napi-rs/canvas','pdfjs-dist']) { if (p.dependencies[n] && (l.packages[''].dependencies?.[n] !== p.dependencies[n] || !l.packages['node_modules/'+n])) { throw new Error('package-lock.json is missing a consistent entry for '+n); } }"
+          node -e "const p=require('./package.json');const l=require('./package-lock.json');for(const [group,deps] of [['dependencies',p.dependencies||{}],['devDependencies',p.devDependencies||{}]])for(const [n,v] of Object.entries(deps)){if(l.packages?.['']?.[group]?.[n]!==v||!l.packages?.['node_modules/'+n])throw new Error('package-lock.json missing or inconsistent '+group+' entry: '+n)}console.log('all direct dependencies are locked')"
       - name: Install locked dependencies
         run: npm ci
+      - name: Verify installed dependency tree
+        run: npm ls --depth=0
       - name: Run automated tests
         run: npm test -- --runInBand
       - name: Build Windows installers
