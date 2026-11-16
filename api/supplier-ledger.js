@@ -36,6 +36,20 @@ const localOnly = (req, res, next) => {
 app.use(localOnly);
 app.use(express.json({ limit: "1mb" }));
 
+function summarizeLedger(entries) {
+  const summary = {};
+  for (const entry of entries || []) {
+    const currency = String(entry.currency || "");
+    if (!currencies.has(currency)) continue;
+    const value = summary[currency] || { purchases: 0, payments: 0, reversals: 0, balance: 0 };
+    const amount = Number(entry.amount) || 0;
+    if (entry.type === "purchase") { value.purchases += amount; value.balance += amount; }
+    else if (entry.type === "payment") { value.payments += amount; value.balance -= amount; }
+    else if (entry.type === "purchase_reversal") { value.reversals += amount; value.balance -= amount; }
+    summary[currency] = value;
+  }
+  return summary;
+}
 async function getSupplier(name, create) {
   const normalizedName = clean(name).toLowerCase();
   if (!normalizedName) throw new Error("A distributor name is required.");
@@ -65,14 +79,7 @@ app.get("/suppliers", async (_req, res) => {
     const { result: entries } = await call(ledgerDB, "find", {});
     const result = suppliers.map(s => {
       const ledger = entries.filter(e => e.supplierId === s._id);
-      const currenciesSummary = {};
-      for (const e of ledger) {
-        const v = currenciesSummary[e.currency] || { purchases: 0, payments: 0, balance: 0 };
-        if (e.type === "purchase") v.purchases += e.amount;
-        if (e.type === "payment") v.payments += e.amount;
-        v.balance += e.type === "purchase" ? e.amount : -e.amount;
-        currenciesSummary[e.currency] = v;
-      }
+      const currenciesSummary = summarizeLedger(ledger);
       return { id: s._id, name: s.name, balances: currenciesSummary };
     });
     res.json(result);
@@ -210,4 +217,4 @@ app.get("/reconcile/history", async (_req, res) => {
   } catch (e) { res.status(500).json({ error: "Could not load reconciliation history." }); }
 });
 
-module.exports = { app, supplierDB, ledgerDB, recordLedger, getSupplier };
+module.exports = { app, supplierDB, ledgerDB, recordLedger, getSupplier, summarizeLedger };
