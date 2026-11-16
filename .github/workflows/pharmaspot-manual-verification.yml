@@ -105,14 +105,30 @@ jobs:
           }
           Write-Host "Verified Windows installer artifacts:"
           $installers | ForEach-Object { Write-Host $_.FullName }
-      - name: Upload verification outputs
+      - name: Upload Squirrel Windows installer
+        if: inputs.package_windows && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmaspot-windows-setup-${{ github.run_number }}
+          if-no-files-found: error
+          compression-level: 0
+          path: out/make/squirrel.windows/x64/*Setup.exe
+      - name: Upload MSI installer
+        if: inputs.package_windows && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmaspot-windows-msi-${{ github.run_number }}
+          if-no-files-found: error
+          compression-level: 0
+          path: out/make/wix/x64/*.msi
+      - name: Upload verification reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pharmaspot-verification-${{ github.run_number }}
+          name: pharmaspot-verification-reports-${{ github.run_number }}
           if-no-files-found: warn
+          compression-level: 0
           path: |
             package-lock.json
-            out/**
             windows-build-sha256.txt
             npm-audit-report.json
