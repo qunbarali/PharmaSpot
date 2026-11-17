@@ -10,7 +10,7 @@ const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
 const { writeAudit, authorizeAdmin } = require("./audit");
-const { planPurchaseReversal, calculatePurchaseTotal, validatePurchaseDraft } = require("./purchase-utils");
+const { planPurchaseReversal, calculatePurchaseTotal, convertToBaseCurrency, normalizeInvoiceKey, validatePurchaseDraft } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -44,6 +44,25 @@ const upload = multer({
 
 const cleanName = (value) => String(value || "").toLowerCase().replace(/\.[^.]+$/, "").replace(/[^a-z0-9]+/g, "");
 const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+
+function normalizeSourceFiles(files) {
+  return (Array.isArray(files) ? files : []).slice(0, 20).map(file => {
+    const storedName = String(file && file.storedName || "");
+    if (!/^[a-f0-9-]{36}\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(storedName)) return null;
+    const filePath = path.join(importRoot, storedName);
+    if (!fs.existsSync(filePath)) return null;
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > 20 * 1024 * 1024) return null;
+    const sha256 = crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+    return {
+      originalName: path.basename(String(file.originalName || "")).slice(0, 200),
+      storedName,
+      type: path.extname(storedName).toLowerCase(),
+      size: stat.size,
+      sha256
+    };
+  }).filter(Boolean);
+}
 
 // Importing supplier documents and changing stock is restricted to the local app host.
 app.use((req, res, next) => {
@@ -184,6 +203,9 @@ const postPurchaseHandler = (req, res) => {
   const supplier = String(body.supplier || "").trim();
   const invoiceNo = String(body.invoiceNo || "").trim();
   const currency = String(body.currency || "").toUpperCase();
+  const supplierIdentifier = String(body.supplierIdentifier || "").trim().slice(0, 120);
+  const invoiceDate = String(body.invoiceDate || "").trim();
+  const exchangeRateDate = String(body.exchangeRateDate || invoiceDate || new Date().toISOString().slice(0, 10)).trim();
   const allowedCurrencies = new Set(["PKR", "INR", "USD"]);
   const rows = Array.isArray(body.items) ? body.items : [];
   if (!supplier || !invoiceNo || !allowedCurrencies.has(currency) || !rows.length) {
@@ -193,7 +215,8 @@ const postPurchaseHandler = (req, res) => {
   const baseCurrency = String(body.baseCurrency || "PKR").toUpperCase();
   if (!["PKR", "INR", "USD"].includes(baseCurrency) || !Number.isFinite(rate) || rate <= 0) return res.status(400).json({ error: "A supported base currency and a positive exchange rate are required." });
   if (currency === baseCurrency && rate !== 1) return res.status(400).json({ error: "Exchange rate must be 1 when invoice and store currencies are the same." });
-  const importKey = supplier.toLowerCase() + "|" + invoiceNo.toLowerCase();
+  const importKey = normalizeInvoiceKey(supplier, invoiceNo);
+  const sourceFiles = normalizeSourceFiles(body.sourceFiles);
   importsDB.findOne({ importKey }, (lookupError, duplicate) => {
     if (lookupError) return res.status(500).json({ error: "Could not check duplicate invoices." });
     if (duplicate) return res.status(409).json({ error: "This supplier invoice has already been imported.", importId: duplicate._id });
@@ -233,12 +256,17 @@ const postPurchaseHandler = (req, res) => {
           purchasePrice,
           salePrice,
           baseCurrency,
-          basePurchasePrice: Number((purchasePrice * rate).toFixed(4)),
-          baseSalePrice: Number((salePrice * rate).toFixed(4)),
+          basePurchasePrice: convertToBaseCurrency(purchasePrice, rate, 4),
+          baseSalePrice: convertToBaseCurrency(salePrice, rate, 4),
           currency,
           exchangeRate: rate,
+          exchangeRateDate,
+          baseCurrency,
           supplier,
+          supplierIdentifier,
           invoiceNo,
+          invoiceDate,
+          sourceDescription: String(row.sourceDescription || row.productName || row.description || "").trim().slice(0, 160),
           receivedAt: new Date().toISOString(),
         };
         const snapshot = { before: JSON.parse(JSON.stringify(product)), after: null };
@@ -253,9 +281,9 @@ const postPurchaseHandler = (req, res) => {
         const newQuantity = Number(product.quantity || 0) + quantity;
         const updateFields = {
           quantity: newQuantity,
-          price: String(Number((salePrice * rate).toFixed(2))),
+          price: String(convertToBaseCurrency(salePrice, rate, 2)),
           supplier,
-          purchasePrice: String(Number((purchasePrice * rate).toFixed(2))),
+          purchasePrice: String(convertToBaseCurrency(purchasePrice, rate, 2)),
           expirationDate: expiryDate,
           batches,
         };
@@ -264,7 +292,12 @@ const postPurchaseHandler = (req, res) => {
         inventoryDB.update(selector, { $set: updateFields }, {}, (updateError, count) => {
           if (updateError || !count) { snapshots.pop(); return next(updateError || new Error("Stock changed during purchase posting.")); }
           snapshot.after = { ...JSON.parse(JSON.stringify(product)), ...updateFields };
-          applied.push({ importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate, previousProductFields, postedProductFields: { price: updateFields.price, supplier: updateFields.supplier, purchasePrice: updateFields.purchasePrice, expirationDate: updateFields.expirationDate } });
+          applied.push({
+            importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate,
+            sourceDescription: String(row.sourceDescription || row.productName || row.description || "").trim().slice(0, 160),
+            previousProductFields,
+            postedProductFields: { price: updateFields.price, supplier: updateFields.supplier, purchasePrice: updateFields.purchasePrice, expirationDate: updateFields.expirationDate }
+          });
           next();
         });
       });
@@ -273,12 +306,15 @@ const postPurchaseHandler = (req, res) => {
       importsDB.insert({
         importKey,
         supplier,
+        supplierIdentifier,
         invoiceNo,
+        invoiceDate,
         currency,
         baseCurrency,
         exchangeRate: rate,
+        exchangeRateDate,
         items: applied,
-        sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && /^[a-f0-9-]+\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(file.storedName || "")).map(file => ({ originalName: String(file.originalName || "").slice(0, 200), storedName: file.storedName })) : [],
+        sourceFiles,
         createdAt: new Date().toISOString(),
         status: "posted",
       }, (saveError, record) => {
@@ -309,21 +345,26 @@ app.post("/commit-purchase", async (req, res) => {
   let validated;
   try { validated = validatePurchaseDraft(body); }
   catch (error) { return res.status(400).json({ error: error.message }); }
-  const { supplier, invoiceNo, currency, baseCurrency, exchangeRate, items } = validated;
-  const draftKey = supplier.toLowerCase() + "|" + invoiceNo.toLowerCase();
+  const { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate, items } = validated;
+  const draftKey = normalizeInvoiceKey(supplier, invoiceNo);
+  const sourceFiles = normalizeSourceFiles(body.sourceFiles);
   try {
-    const existing = await new Promise((resolve, reject) => importsDB.findOne({ importKey: draftKey }, (err, doc) => err ? reject(err) : resolve(doc)));
-    if (existing) return res.status(409).json({ error: "This supplier invoice has already been posted." });
+    const existingPosted = await new Promise((resolve, reject) => importsDB.findOne({ importKey: draftKey }, (err, doc) => err ? reject(err) : resolve(doc)));
+    if (existingPosted) return res.status(409).json({ error: "This supplier invoice has already been posted." });
+    const existingDraft = await new Promise((resolve, reject) => importsDB.findOne({ draftKey }, (err, doc) => err ? reject(err) : resolve(doc)));
+    if (existingDraft) return res.status(409).json({ error: "A draft for this supplier invoice already exists.", draftId: existingDraft._id, status: existingDraft.status });
   } catch (_) { return res.status(500).json({ error: "Could not check for duplicate supplier invoices." }); }
   importsDB.insert({
-    type: "purchase_draft", status: "pending_approval", draftKey, supplier, invoiceNo,
-    currency, baseCurrency, exchangeRate, items,
-    sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && /^[a-f0-9-]+\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(file.storedName || "")).map(file => ({ originalName: String(file.originalName || "").slice(0, 200), storedName: file.storedName })) : [],
+    type: "purchase_draft", status: "pending_approval", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
+    currency, baseCurrency, exchangeRate, exchangeRateDate, items, sourceFiles,
     createdAt: new Date().toISOString()
   }, (err, draft) => {
     if (err && err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
     if (err) return res.status(500).json({ error: "Could not save purchase for approval." });
-    writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, { supplier, invoiceNo, lineCount: items.length })
+    writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, {
+      supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate,
+      lineCount: items.length, sourceFileCount: sourceFiles.length
+    })
       .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." }))
       .catch(() => res.status(500).json({ error: "Purchase draft saved but audit record failed. Contact an administrator before approval." }));
   });
