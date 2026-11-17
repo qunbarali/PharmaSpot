@@ -225,8 +225,8 @@ function parseInvoiceText(raw) {
     /\b(?:NTN|GSTIN?|tax\s*id|registration\s*(?:no|number))\s*[:#-]?\s*([A-Z0-9/-]{3,})/i
   ]);
   const invoiceNo = getLabeledValue(text, [
-    new RegExp("(?:invoice\\s*date|bill\\s*date|date)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
-    new RegExp("(?:invoice\\s*date|bill\\s*date|date)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
+    /(?:invoice|bill|inv|voucher)\s*(?:no\.?|number|num|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{2,})/i,
+    /(?:invoice|bill)\s*[:#]\s*([A-Z0-9][A-Z0-9/-]{2,})/i
   ]);
   const invoiceDateRaw = getLabeledValue(text, [
     new RegExp("(?:invoice\\s*date|bill\\s*date|date)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
