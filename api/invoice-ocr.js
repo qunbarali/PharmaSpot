@@ -216,6 +216,25 @@ function parseLooseRow(line, headerContext) {
   });
 }
 
+function textItemsToLines(items) {
+  const lines = [];
+  let current = [];
+  let currentY = null;
+  for (const item of items || []) {
+    const value = String(item && item.str || "").trim();
+    if (!value) continue;
+    const y = item && Array.isArray(item.transform) ? Number(item.transform[5]) : null;
+    if (current.length && Number.isFinite(y) && Number.isFinite(currentY) && Math.abs(y - currentY) > 2.5) {
+      lines.push(current.join(" ").trim());
+      current = [];
+    }
+    if (!current.length) currentY = y;
+    current.push(value);
+  }
+  if (current.length) lines.push(current.join(" ").trim());
+  return lines.join("\n");
+}
+
 function parseInvoiceText(raw) {
   const text = normalizeText(raw);
   const lines = text.split("\n").map(line => line.trim()).filter(Boolean).slice(0, MAX_LINES);
@@ -339,7 +358,7 @@ async function extractPdf(filePath) {
       try {
         const content = await page.getTextContent();
         const items = (content.items || []).filter(item => item && typeof item.str === "string" && item.str.trim());
-        const nativeText = normalizeText(items.map(item => item.str).join(" "));
+        const nativeText = normalizeText(textItemsToLines(items));
         let pageText = nativeText.length >= 12 ? nativeText : "";
         if (!pageText) {
           if (!worker) worker = await createOcrWorker();
