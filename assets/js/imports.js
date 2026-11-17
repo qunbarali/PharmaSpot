@@ -27,15 +27,17 @@ function productOptions(selected) {
 
 function addPurchaseRow(values = {}) {
   const row = $('<tr>' +
+    '<td><input class="form-control import-description" type="text" placeholder="Invoice item description"></td>' +
     '<td><select class="form-control import-product">' + productOptions(values.productId) + '</select></td>' +
     '<td><input class="form-control import-quantity" type="number" min="0.001" step="any" placeholder="Qty"></td>' +
     '<td><input class="form-control import-cost" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
     '<td><input class="form-control import-sale" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
     '<td><input class="form-control import-batch" type="text" placeholder="Batch"></td>' +
-    '<td><input class="form-control import-expiry" type="text" placeholder="31-Dec-2027"></td>' +
+    '<td><input class="form-control import-expiry" type="text" placeholder="YYYY-MM-DD"></td>' +
     '<td><button type="button" class="btn btn-danger btn-xs remove-import-row" title="Remove line">×</button></td>' +
     '</tr>');
   $("#purchaseImportTable tbody").append(row);
+  row.find(".import-description").val(values.sourceDescription || values.productName || values.description || "");
   row.find(".import-product").val(values.productId || "");
   row.find(".import-quantity").val(values.quantity ?? "");
   row.find(".import-cost").val(values.purchasePrice ?? "");
@@ -60,6 +62,15 @@ function bestInvoiceProductMatch(description) {
   return ranked.length && ranked[0].score >= 0.72 ? String(ranked[0].product._id) : "";
 }
 
+function updateImportExchangeRate() {
+  if ($("#importCurrency").val() === baseCurrency) {
+    $("#importExchangeRate").val("1");
+    return;
+  }
+  const configuredForeignPerBase = Number((appSettings.exchangeRates || {})[$("#importCurrency").val()] || 0);
+  $("#importExchangeRate").val(configuredForeignPerBase > 0 ? (1 / configuredForeignPerBase).toFixed(6) : "");
+}
+
 function runInvoiceOcr(files) {
   const candidates = (files || []).flatMap(file =>
     file.type === ".zip" ? (file.extractedImages || []) : [file]
@@ -72,47 +83,70 @@ function runInvoiceOcr(files) {
     panel.text("Files uploaded. No supported PDF or image invoice was found to read.");
     return;
   }
-  panel.append($('<p class="text-muted"></p>').text("Reading invoice documents… OCR results are drafts and must be checked against the original."));
+  panel.append($('<p class="text-muted"></p>').text("Reading invoice documents… OCR output is a draft. Check the extracted values against the original invoice."));
   supported.forEach(file => {
-    $.ajax({ url: importApi + "imports/ocr/" + encodeURIComponent(file.storedName), method: "POST" })
+    $.ajax({ url: importApi + "imports/ocr/" + encodeURIComponent(file.storedName), method: "POST", timeout: 120000 })
       .done(result => {
+        const fields = result.fields || {};
         const card = $('<div class="panel panel-default m-t-10"></div>');
-        card.append($('<div class="panel-heading"></div>').text(file.originalName + " — OCR draft"));
+        card.append($('<div class="panel-heading"></div>').text(file.originalName + " — OCR review draft"));
         const body = $('<div class="panel-body"></div>');
-        body.append($('<p></p>').text("Invoice number: " + (result.fields.invoiceNo || "Not detected") + " | Date: " + (result.fields.invoiceDate || "Not detected") + " | Currency: " + (result.fields.currency || "Not detected")));
-        if (result.fields.invoiceNo && !$("#importInvoiceNo").val()) $("#importInvoiceNo").val(result.fields.invoiceNo);
-        if (result.fields.currency && ["PKR", "INR", "USD"].includes(result.fields.currency) && !$("#importCurrency").data("user-selected")) $("#importCurrency").val(result.fields.currency).trigger("change");
+        body.append($("<p></p>").text(
+          "Supplier: " + (fields.supplier || "Not detected") +
+          " | Supplier ID: " + (fields.supplierIdentifier || "Not detected") +
+          " | Invoice: " + (fields.invoiceNo || "Not detected") +
+          " | Date: " + (fields.invoiceDate || "Not detected") +
+          " | Currency: " + (fields.currency || "Not detected")
+        ));
+        if (fields.supplier && !$("#importSupplier").val()) $("#importSupplier").val(fields.supplier);
+        if (fields.supplierIdentifier && !$("#importSupplierIdentifier").val()) $("#importSupplierIdentifier").val(fields.supplierIdentifier);
+        if (fields.invoiceNo && !$("#importInvoiceNo").val()) $("#importInvoiceNo").val(fields.invoiceNo);
+        if (fields.invoiceDate && /^\d{4}-\d{2}-\d{2}$/.test(fields.invoiceDate) && !$("#importInvoiceDate").val()) {
+          $("#importInvoiceDate").val(fields.invoiceDate);
+          if (!$("#importExchangeRateDate").data("user-selected")) $("#importExchangeRateDate").val(fields.invoiceDate);
+        }
+        if (fields.currency && ["PKR", "INR", "USD"].includes(fields.currency) && !$("#importCurrency").data("user-selected")) {
+          $("#importCurrency").val(fields.currency);
+          updateImportExchangeRate();
+        }
         if (result.rows && result.rows.length) {
-          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Qty</th><th>Unit price</th><th>Line total</th><th></th></tr></thead><tbody></tbody></table>');
+          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table>');
           result.rows.forEach(invoiceRow => {
-            const suggestedId = bestInvoiceProductMatch(invoiceRow.description);
+            const description = invoiceRow.productName || invoiceRow.description || "";
+            const suggestedId = bestInvoiceProductMatch(description);
             const select = $('<select class="form-control input-sm"></select>').html(productOptions(suggestedId));
-            const add = $('<button class="btn btn-success btn-xs" type="button">Add line</button>');
+            const add = $('<button class="btn btn-success btn-xs" type="button">Add editable row</button>');
             add.on("click", () => {
               if (!select.val()) return window.alert("Choose the correct medicine for this invoice line first.");
               addPurchaseRow({
+                sourceDescription: description,
                 productId: select.val(),
                 quantity: invoiceRow.quantity,
-                purchasePrice: invoiceRow.unitPrice
+                purchasePrice: invoiceRow.purchasePrice ?? invoiceRow.unitPrice ?? "",
+                salePrice: invoiceRow.salePrice ?? "",
+                batchNumber: invoiceRow.batchNumber || "",
+                expiryDate: invoiceRow.expiryDate || ""
               });
-              add.prop("disabled", true).text("Added");
+              add.prop("disabled", true).text("Added to draft");
             });
             const line = $("<tr></tr>").append(
-              $("<td></td>").text(invoiceRow.description),
+              $("<td></td>").text(description || "Not detected"),
               $("<td></td>").append(select),
-              $("<td></td>").text(invoiceRow.quantity),
-              $("<td></td>").text(invoiceRow.unitPrice),
-              $("<td></td>").text(invoiceRow.lineTotal),
+              $("<td></td>").text(invoiceRow.quantity ?? "Not detected"),
+              $("<td></td>").text(invoiceRow.purchasePrice ?? invoiceRow.unitPrice ?? "Not detected"),
+              $("<td></td>").text(invoiceRow.salePrice ?? "Not detected"),
+              $("<td></td>").text(invoiceRow.batchNumber || "Not detected"),
+              $("<td></td>").text(invoiceRow.expiryDate || "Not detected"),
               $("<td></td>").append(add)
             );
             suggestions.find("tbody").append(line);
           });
-          body.append($('<p class="text-warning"></p>').text("Select or confirm the medicine, then add each detected line to the purchase table. Sale price, batch number and expiry still require manual verification."), suggestions);
+          body.append($('<p class="text-warning"></p>').text("Add each detected line to the editable purchase table. You can correct the description, product, quantity, purchase price, sale price, batch and expiry before saving the draft."), suggestions);
         } else {
-          body.append($('<p class="text-warning"></p>').text("No structured invoice lines were detected. Review the extracted text and enter the lines manually."));
+          body.append($('<p class="text-warning"></p>').text("No structured invoice lines were detected. Review the extracted text and enter each invoice line manually."));
         }
         body.append($('<pre style="white-space:pre-wrap;max-height:220px;overflow:auto"></pre>').text(result.text || "No readable text detected."));
-        body.append($('<p class="text-warning"></p>').text(result.warning || "Verify all OCR values before posting."));
+        body.append($('<p class="text-warning"></p>').text(result.warning || "OCR values are not approved. Verify every field before saving or approving."));
         card.append(body); panel.append(card);
       })
       .fail(xhr => panel.append($('<p class="text-danger"></p>').text(file.originalName + ": " + (xhr.responseJSON?.error || "OCR failed."))));
@@ -369,15 +403,16 @@ $(function () {
       .fail(xhr => window.alert(xhr.responseJSON?.error || "Could not record payment."));
   });
   $("#importCurrency").on("change", function () {
-    if (this.value === baseCurrency) { $("#importExchangeRate").val("1"); return; }
-    const configuredForeignPerBase = Number((appSettings.exchangeRates || {})[this.value] || 0);
-    $("#importExchangeRate").val(configuredForeignPerBase > 0 ? (1 / configuredForeignPerBase).toFixed(6) : "");
+    $(this).data("user-selected", true);
+    updateImportExchangeRate();
   });
+  $("#importExchangeRateDate").on("change", function () { $(this).data("user-selected", true); });
   $("#documentImportModal").on("shown.bs.modal", () => loadImportProducts(() => {
     if (!$("#purchaseImportTable tbody tr").length) addPurchaseRow();
   }));
   $("#importCurrency").val(baseCurrency);
   $("#importExchangeRate").val("1");
+  if (!$("#importExchangeRateDate").val()) $("#importExchangeRateDate").val(new Date().toISOString().slice(0, 10));
   $("#currencyCode").on("change", function () {
     const symbols = { PKR: "Rs", INR: "₹", USD: "$" };
     $("#symbol").val(symbols[this.value] || this.value);
@@ -397,6 +432,7 @@ $(function () {
     $("#purchaseImportTable tbody tr").each(function () {
       const row = $(this);
       items.push({
+        sourceDescription: row.find(".import-description").val(),
         productId: row.find(".import-product").val(),
         quantity: row.find(".import-quantity").val(),
         purchasePrice: row.find(".import-cost").val(),
@@ -405,7 +441,10 @@ $(function () {
         expiryDate: row.find(".import-expiry").val()
       });
     });
-    if (!items.length || items.some(item => !item.productId || !item.quantity || !item.purchasePrice || !item.salePrice || !item.batchNumber || !item.expiryDate)) {
+    if (!items.length || items.some(item =>
+      !item.productId || item.quantity === "" || item.purchasePrice === "" || item.salePrice === "" ||
+      !String(item.batchNumber || "").trim() || !String(item.expiryDate || "").trim()
+    )) {
       window.alert("Complete every invoice line before posting stock.");
       return;
     }
@@ -416,11 +455,14 @@ $(function () {
       contentType: "application/json",
       data: JSON.stringify({
         supplier: $("#importSupplier").val(),
+        supplierIdentifier: $("#importSupplierIdentifier").val(),
         invoiceNo: $("#importInvoiceNo").val(),
+        invoiceDate: $("#importInvoiceDate").val(),
         currency: $("#importCurrency").val(),
         baseCurrency,
         sourceFiles: stagedInvoiceFiles,
         exchangeRate: $("#importExchangeRate").val(),
+        exchangeRateDate: $("#importExchangeRateDate").val(),
         items
       }),
       success: result => {
@@ -437,7 +479,11 @@ $(function () {
           success: posted => {
             window.alert(posted.success ? "Purchase approved and posted. " + posted.appliedRows + " product line(s) added to stock." : "Purchase approval did not complete.");
             $("#purchaseImportTable tbody").empty();
-            $("#importSupplier,#importInvoiceNo").val("");
+            $("#importSupplier,#importSupplierIdentifier,#importInvoiceNo,#importInvoiceDate").val("");
+            $("#invoiceOcrResults").empty();
+            stagedInvoiceFiles = [];
+            $("#importExchangeRateDate").val(new Date().toISOString().slice(0, 10));
+            $("#importExchangeRateDate").data("user-selected", false);
             loadImportProducts(() => addPurchaseRow());
           },
           error: xhr => window.alert(xhr.responseJSON?.error || "Could not approve purchase. Draft remains available for review.")
