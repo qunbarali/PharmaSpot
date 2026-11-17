@@ -82,7 +82,7 @@ function validatePurchaseDraft(input) {
   const invoiceDate = String(body.invoiceDate || "").trim();
   const currency = String(body.currency || "").toUpperCase();
   const baseCurrency = String(body.baseCurrency || "PKR").toUpperCase();
-  const exchangeRate = Number(body.exchangeRate == null || body.exchangeRate === "" ? 1 : body.exchangeRate);
+  const exchangeRate = Number(body.exchangeRate == null || body.exchangeRate === "" ? (currency === baseCurrency ? 1 : NaN) : body.exchangeRate);
   const exchangeRateDate = String(body.exchangeRateDate || invoiceDate || new Date().toISOString().slice(0, 10)).trim();
   const items = Array.isArray(body.items) ? body.items : [];
 
