@@ -1,20 +1,35 @@
-name: Summarize new issues
+name: Summarize an issue (manual only)
 
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: GitHub issue number to summarize
+        required: true
+        type: number
+
+permissions:
+  issues: write
+  models: read
+  contents: read
 
 jobs:
   summary:
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      models: read
-      contents: read
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Load selected issue
+        id: issue
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: \${{ inputs.issue_number }}
+        run: |
+          gh issue view "$ISSUE_NUMBER" --json title,body > issue.json
+          echo "title<<ISSUE_TITLE_EOF" >> "$GITHUB_OUTPUT"
+          jq -r '.title' issue.json >> "$GITHUB_OUTPUT"
+          echo "ISSUE_TITLE_EOF" >> "$GITHUB_OUTPUT"
+          echo "body<<ISSUE_BODY_EOF" >> "$GITHUB_OUTPUT"
+          jq -r '.body // ""' issue.json >> "$GITHUB_OUTPUT"
+          echo "ISSUE_BODY_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Run AI inference
         id: inference
@@ -22,13 +37,13 @@ jobs:
         with:
           prompt: |
             Summarize the following GitHub issue in one paragraph:
-            Title: ${{ github.event.issue.title }}
-            Body: ${{ github.event.issue.body }}
+            Title: \${{ steps.issue.outputs.title }}
+            Body:
+            \${{ steps.issue.outputs.body }}
 
       - name: Comment with AI summary
-        run: |
-          gh issue comment "$ISSUE_NUMBER" --body "$RESPONSE"
+        run: gh issue comment "$ISSUE_NUMBER" --body "$RESPONSE"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          RESPONSE: ${{ steps.inference.outputs.response }}
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: \${{ inputs.issue_number }}
+          RESPONSE: \${{ steps.inference.outputs.response }}
