@@ -117,6 +117,7 @@ describe("purchase posting and reversal helpers", () => {
       items: [{ productId: 5, quantity: 10, purchasePrice: 12, salePrice: 15, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
     };
     expect(() => validatePurchaseDraft({ ...valid, exchangeRate: 2 })).toThrow(/must be 1/i);
+    expect(() => validatePurchaseDraft({ ...valid, currency: "INR", baseCurrency: "PKR", exchangeRate: "" })).toThrow(/positive exchange rate/i);
     expect(() => validatePurchaseDraft({ ...valid, exchangeRateDate: "2026-02-30" })).toThrow(/exchange-rate date/i);
     expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], quantity: -1 }] })).toThrow();
     expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], productId: "x" }] })).toThrow(/valid product/i);
