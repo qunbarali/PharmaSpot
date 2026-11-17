@@ -20,8 +20,8 @@ jobs:
       - name: Load selected issue
         id: issue
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: \${{ inputs.issue_number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: |
           gh issue view "$ISSUE_NUMBER" --json title,body > issue.json
           echo "title<<ISSUE_TITLE_EOF" >> "$GITHUB_OUTPUT"
@@ -37,13 +37,13 @@ jobs:
         with:
           prompt: |
             Summarize the following GitHub issue in one paragraph:
-            Title: \${{ steps.issue.outputs.title }}
+            Title: ${{ steps.issue.outputs.title }}
             Body:
-            \${{ steps.issue.outputs.body }}
+            ${{ steps.issue.outputs.body }}
 
       - name: Comment with AI summary
         run: gh issue comment "$ISSUE_NUMBER" --body "$RESPONSE"
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: \${{ inputs.issue_number }}
-          RESPONSE: \${{ steps.inference.outputs.response }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          RESPONSE: ${{ steps.inference.outputs.response }}
