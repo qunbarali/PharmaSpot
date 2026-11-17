@@ -29,7 +29,7 @@ jobs:
       - name: Enforce feature branch only
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_NAME -ne "feature/ocr-distributor-stock-reconciliation") { throw "Run this workflow only on feature/ocr-distributor-stock-reconciliation." }
+          if ($env:GITHUB_REF_NAME -ne "feature/document-import-multi-currency") { throw "Run this workflow only on feature/document-import-multi-currency." }
       - name: Regenerate package lock
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Apply non-breaking dependency security fixes
@@ -57,7 +57,7 @@ jobs:
           if ($diffExit -eq 1) {
             git commit -m 'chore: regenerate package lock for invoice OCR'
             if ($LASTEXITCODE -ne 0) { throw "Could not commit regenerated package-lock.json." }
-            git push origin HEAD:feature/ocr-distributor-stock-reconciliation
+            git push origin HEAD:feature/document-import-multi-currency
             if ($LASTEXITCODE -ne 0) { throw "Could not push regenerated lockfile to the feature branch." }
           } elseif ($diffExit -ne 0) {
             throw "Could not inspect staged package-lock.json changes."
