@@ -1,4 +1,12 @@
-const { findReversalBatchIndex, calculatePurchaseTotal, planPurchaseReversal, validatePurchaseDraft } = require("./purchase-utils");
+const {
+  findReversalBatchIndex,
+  calculatePurchaseTotal,
+  convertToBaseCurrency,
+  normalizeInvoiceKey,
+  isIsoDate,
+  planPurchaseReversal,
+  validatePurchaseDraft
+} = require("./purchase-utils");
 
 describe("purchase posting and reversal helpers", () => {
   test("targets an exact imported line even when batch labels are duplicated", () => {
@@ -22,6 +30,26 @@ describe("purchase posting and reversal helpers", () => {
     expect(calculatePurchaseTotal([{ quantity: 2, purchasePrice: 10.25 }, { quantity: 3, purchasePrice: 4 }])).toBe(32.5);
     expect(() => calculatePurchaseTotal([{ quantity: 0, purchasePrice: 5 }])).toThrow();
   });
+
+  test("converts invoice prices into store currency at the recorded rate and precision", () => {
+    expect(convertToBaseCurrency(12.5, 3.75, 4)).toBe(46.875);
+    expect(convertToBaseCurrency(12.5, 3.75, 2)).toBe(46.88);
+    expect(convertToBaseCurrency(10, 1, 2)).toBe(10);
+    expect(() => convertToBaseCurrency(10, 0)).toThrow();
+    expect(() => convertToBaseCurrency(-1, 2)).toThrow();
+  });
+
+  test("normalizes supplier and invoice keys for duplicate detection", () => {
+    expect(normalizeInvoiceKey("  Main   Distributor ", " INV-100 ")).toBe("main distributor|inv-100");
+    expect(() => normalizeInvoiceKey("", "INV-100")).toThrow();
+  });
+
+  test("validates exchange-rate and invoice dates as real ISO calendar dates", () => {
+    expect(isIsoDate("2026-11-16")).toBe(true);
+    expect(isIsoDate("2026-02-30")).toBe(false);
+    expect(isIsoDate("16-11-2026")).toBe(false);
+  });
+
   test("plans a safe reversal and restores unchanged product metadata", () => {
     const product = {
       _id: 7, quantity: 12, price: "25", supplier: "Supplier A",
@@ -58,25 +86,39 @@ describe("purchase posting and reversal helpers", () => {
     expect(() => planPurchaseReversal(product, { importLineId: "line-1", quantity: 2 })).toThrow(/changed or been sold/);
   });
 
-  test("validates a purchase draft before it enters the approval queue", () => {
+  test("validates a purchase draft and records invoice currency conversion date", () => {
     const draft = validatePurchaseDraft({
-      supplier: "Main Distributor", invoiceNo: "INV-100", currency: "PKR",
-      baseCurrency: "PKR", exchangeRate: 1,
-      items: [{ productId: 5, quantity: 10, purchasePrice: 12, salePrice: 15, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
+      supplier: "Main Distributor",
+      supplierIdentifier: "SUP-007",
+      invoiceNo: "INV-100",
+      invoiceDate: "2026-11-15",
+      currency: "INR",
+      baseCurrency: "PKR",
+      exchangeRate: 3.75,
+      exchangeRateDate: "2026-11-16",
+      items: [{
+        productId: 5, sourceDescription: "Paracetamol 500mg",
+        quantity: 10, purchasePrice: 12, salePrice: 15,
+        batchNumber: "B-1", expiryDate: "31-Dec-2027"
+      }]
     });
     expect(draft.items).toHaveLength(1);
-    expect(draft.currency).toBe("PKR");
+    expect(draft.items[0].sourceDescription).toBe("Paracetamol 500mg");
+    expect(draft.currency).toBe("INR");
+    expect(draft.baseCurrency).toBe("PKR");
+    expect(draft.exchangeRate).toBe(3.75);
+    expect(draft.exchangeRateDate).toBe("2026-11-16");
   });
 
-  test("rejects duplicate/invalid purchase fields and invalid exchange rates", () => {
+  test("rejects duplicate/invalid purchase fields, dates and exchange rates", () => {
     const valid = {
       supplier: "Main Distributor", invoiceNo: "INV-100", currency: "PKR",
-      baseCurrency: "PKR", exchangeRate: 1,
+      baseCurrency: "PKR", exchangeRate: 1, exchangeRateDate: "2026-11-16",
       items: [{ productId: 5, quantity: 10, purchasePrice: 12, salePrice: 15, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
     };
     expect(() => validatePurchaseDraft({ ...valid, exchangeRate: 2 })).toThrow(/must be 1/i);
+    expect(() => validatePurchaseDraft({ ...valid, exchangeRateDate: "2026-02-30" })).toThrow(/exchange-rate date/i);
     expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], quantity: -1 }] })).toThrow();
     expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], productId: "x" }] })).toThrow(/valid product/i);
   });
-
 });
