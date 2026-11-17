@@ -76,10 +76,15 @@ app.get("/", (_req, res) => res.json({ module: "document-import", supported: Arr
 
 app.post("/upload", (req, res) => {
   upload.array("files", 20)(req, res, async (error) => {
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) {
+      for (const file of (req.files || [])) if (file && file.path) fs.unlink(file.path, () => {});
+      return res.status(400).json({ error: error.message });
+    }
+    const stagedPaths = [];
     try {
       const files = [];
       for (const file of (req.files || [])) {
+        stagedPaths.push(file.path);
         const digest = crypto.createHash("sha256").update(fs.readFileSync(file.path)).digest("hex");
         const record = {
           id: path.basename(file.filename, path.extname(file.filename)),
@@ -109,6 +114,7 @@ app.post("/upload", (req, res) => {
             if (!base || base.startsWith(".")) continue;
             const targetName = crypto.randomUUID() + ext;
             const targetPath = path.join(importRoot, targetName);
+            stagedPaths.push(targetPath);
             let actualBytes = 0;
             await new Promise((resolve, reject) => {
               const output = fs.createWriteStream(targetPath, { flags: "wx" });
@@ -156,6 +162,7 @@ app.post("/upload", (req, res) => {
         note: "Files are staged only. Review invoice line items and image matches before applying changes. OCR drafts are available for supported PDFs and images. Verify every field against the original invoice before approval.",
       });
     } catch (err) {
+      await Promise.all(stagedPaths.map(filePath => fs.promises.unlink(filePath).catch(() => {})));
       console.error("Import upload failed:", err);
       res.status(400).json({ error: "Could not safely process the uploaded archive or files." });
     }
@@ -217,6 +224,10 @@ const postPurchaseHandler = (req, res) => {
   if (currency === baseCurrency && rate !== 1) return res.status(400).json({ error: "Exchange rate must be 1 when invoice and store currencies are the same." });
   const importKey = normalizeInvoiceKey(supplier, invoiceNo);
   const sourceFiles = normalizeSourceFiles(body.sourceFiles);
+  const requestedSourceFiles = Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && file.storedName) : [];
+  if (requestedSourceFiles.length && sourceFiles.length !== requestedSourceFiles.length) {
+    return res.status(409).json({ error: "One or more original invoice files are missing or invalid. Re-upload the source documents; no stock was posted." });
+  }
   importsDB.findOne({ importKey }, (lookupError, duplicate) => {
     if (lookupError) return res.status(500).json({ error: "Could not check duplicate invoices." });
     if (duplicate) return res.status(409).json({ error: "This supplier invoice has already been imported.", importId: duplicate._id });
@@ -261,7 +272,6 @@ const postPurchaseHandler = (req, res) => {
           currency,
           exchangeRate: rate,
           exchangeRateDate,
-          baseCurrency,
           supplier,
           supplierIdentifier,
           invoiceNo,
@@ -348,6 +358,10 @@ app.post("/commit-purchase", async (req, res) => {
   const { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate, items } = validated;
   const draftKey = normalizeInvoiceKey(supplier, invoiceNo);
   const sourceFiles = normalizeSourceFiles(body.sourceFiles);
+  const requestedSourceFiles = Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && file.storedName) : [];
+  if (requestedSourceFiles.length && sourceFiles.length !== requestedSourceFiles.length) {
+    return res.status(400).json({ error: "One or more original invoice files are missing or invalid. Re-upload the source documents before saving this draft." });
+  }
   try {
     const existingPosted = await new Promise((resolve, reject) => importsDB.findOne({ importKey: draftKey }, (err, doc) => err ? reject(err) : resolve(doc)));
     if (existingPosted) return res.status(409).json({ error: "This supplier invoice has already been posted." });
