@@ -908,15 +908,18 @@
                             <div id="invoiceOcrResults" class="m-t-10"></div>
                             <div class="row m-t-15">
                                 <div class="col-sm-4"><label>Distributor / Supplier</label><input id="importSupplier" class="form-control" type="text"></div>
+                                <div class="col-sm-4"><label>Supplier code / NTN</label><input id="importSupplierIdentifier" class="form-control" type="text"></div>
                                 <div class="col-sm-4"><label>Invoice number</label><input id="importInvoiceNo" class="form-control" type="text"></div>
-                                <div class="col-sm-4"><label>Invoice currency</label><select id="importCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div>
                             </div>
                             <div class="row m-t-10">
-                                <div class="col-sm-4"><label>Rate: 1 invoice currency = X store currency</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div>
+                                <div class="col-sm-3"><label>Invoice date</label><input id="importInvoiceDate" class="form-control" type="date"></div>
+                                <div class="col-sm-3"><label>Invoice currency</label><select id="importCurrency" class="form-control"><option>PKR</option><option>INR</option><option>USD</option></select></div>
+                                <div class="col-sm-3"><label>Rate: 1 invoice currency = X store currency</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div>
+                                <div class="col-sm-3"><label>Exchange-rate date</label><input id="importExchangeRateDate" class="form-control" type="date"></div>
                             </div>
                             <div class="table-responsive m-t-15">
                                 <table class="table table-bordered" id="purchaseImportTable">
-                                    <thead><tr><th>Product</th><th>Qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry (DD-MMM-YYYY)</th><th></th></tr></thead>
+                                    <thead><tr><th>Invoice description</th><th>Product match</th><th>Qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry (YYYY-MM-DD)</th><th></th></tr></thead>
                                     <tbody></tbody>
                                 </table>
                             </div>
