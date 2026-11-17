@@ -113,14 +113,18 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect((await request("GET", "/imports/pending-purchases", undefined, null)).status).toBe(403);
   expect((await request("GET", "/supplier-ledger/audit", undefined, null)).status).toBe(403);
 
-  const makePurchase = invoiceNo => ({
+  const makePurchase = (invoiceNo, options = {}) => ({
     supplier: "Demo Distributor",
+    supplierIdentifier: "SUP-007",
     invoiceNo,
-    currency: "PKR",
-    baseCurrency: "PKR",
-    exchangeRate: 1,
+    invoiceDate: options.invoiceDate || "2026-11-15",
+    currency: options.currency || "PKR",
+    baseCurrency: options.baseCurrency || "PKR",
+    exchangeRate: options.exchangeRate ?? 1,
+    exchangeRateDate: options.exchangeRateDate || "2026-11-16",
     items: [{
       productId,
+      sourceDescription: "Integration Test Medicine 500mg",
       quantity: invoiceNo === "INV-001" ? 5 : 2,
       purchasePrice: 4,
       salePrice: 6,
@@ -132,6 +136,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const firstDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-001"));
   expect(firstDraft.status).toBe(201);
   expect(firstDraft.data.status).toBe("pending_approval");
+  const duplicatePendingDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-001"));
+  expect(duplicatePendingDraft.status).toBe(409);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
 
   const pending = await request("GET", "/imports/pending-purchases");
@@ -146,6 +152,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   let history = await request("GET", "/imports/history");
   let firstImport = history.data.find(record => record.invoiceNo === "INV-001" && record.status === "posted");
   expect(firstImport).toBeDefined();
+  expect(firstImport).toMatchObject({ supplierIdentifier: "SUP-007", invoiceDate: "2026-11-15", exchangeRateDate: "2026-11-16", currency: "PKR", baseCurrency: "PKR", exchangeRate: 1 });
   expect(await supplierLedger.getLedgerEvent("purchase:" + firstImport._id)).toBeDefined();
 
   const firstReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(firstImport._id), {
@@ -155,16 +162,33 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(firstReversal.data.success).toBe(true);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
   expect(await supplierLedger.getLedgerEvent("purchase-reversal:" + firstImport._id)).toBeDefined();
+  const duplicateReversedInvoice = await request("POST", "/imports/commit-purchase", makePurchase("INV-001"));
+  expect(duplicateReversedInvoice.status).toBe(409);
 
-  const secondDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-002"));
+  const secondDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-002", {
+    currency: "INR", baseCurrency: "PKR", exchangeRate: 3.75,
+    invoiceDate: "2026-11-15", exchangeRateDate: "2026-11-16"
+  }));
   expect(secondDraft.status).toBe(201);
   const secondApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(secondDraft.data.draftId), { confirm: true });
   expect(secondApproval.status).toBe(200);
   history = await request("GET", "/imports/history");
   const secondImport = history.data.find(record => record.invoiceNo === "INV-002" && record.status === "posted");
   expect(secondImport).toBeDefined();
-
+  expect(secondImport).toMatchObject({
+    currency: "INR", baseCurrency: "PKR", exchangeRate: 3.75,
+    invoiceDate: "2026-11-15", exchangeRateDate: "2026-11-16",
+    supplierIdentifier: "SUP-007"
+  });
   const beforeSale = await findOne(inventoryDB, { _id: productId });
+  const importedBatch = beforeSale.batches.find(batch => batch.importLineId === secondImport.items[0].importLineId);
+  expect(importedBatch).toMatchObject({
+    purchasePrice: 4, salePrice: 6, currency: "INR", baseCurrency: "PKR",
+    exchangeRate: 3.75, exchangeRateDate: "2026-11-16",
+    basePurchasePrice: 15, baseSalePrice: 22.5,
+    invoiceDate: "2026-11-15",
+    sourceDescription: "Integration Test Medicine 500mg"
+  });
   const soldBatch = beforeSale.batches.map(batch => batch.importLineId === secondImport.items[0].importLineId ? { ...batch, quantity: 1 } : batch);
   await update(inventoryDB, { _id: productId }, { $set: { quantity: 11, batches: soldBatch } });
 
