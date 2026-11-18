@@ -227,6 +227,28 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(reconciledProduct.quantity).toBe(10);
   expect(reconciledProduct.batches[0].quantity).toBe(9);
 
+  const bonusDraft = await request("POST", "/imports/commit-purchase", {
+    supplier: "Demo Distributor", supplierIdentifier: "SUP-007", invoiceNo: "INV-BONUS",
+    invoiceDate: "2026-11-16", currency: "PKR", baseCurrency: "PKR", exchangeRate: 1,
+    exchangeRateDate: "2026-11-16",
+    items: [{ productId, sourceDescription: "Bonus quantity test", quantity: 4, bonusQuantity: 2,
+      purchasePrice: 5, salePrice: 7, batchNumber: "BONUS-BATCH", expiryDate: "2031-12-31" }]
+  });
+  expect(bonusDraft.status).toBe(201);
+  const bonusApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(bonusDraft.data.draftId), { confirm: true });
+  expect(bonusApproval.status).toBe(200);
+  const bonusProduct = await findOne(inventoryDB, { _id: productId });
+  expect(bonusProduct.quantity).toBe(16);
+  const bonusHistory = await request("GET", "/imports/history");
+  const bonusImport = bonusHistory.data.find(record => record.invoiceNo === "INV-BONUS" && record.status === "posted");
+  expect(bonusImport.items[0]).toMatchObject({ quantity: 6, paidQuantity: 4, bonusQuantity: 2 });
+  expect(bonusImport.total).toBe(20);
+  const bonusReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(bonusImport._id), {
+    confirm: true, reason: "Integration test: reverse bonus quantity purchase"
+  });
+  expect(bonusReversal.status).toBe(200);
+  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+
   const payment = await request("POST", "/supplier-ledger/payment", {
     supplier: "Demo Distributor", amount: 100, currency: "PKR", reference: "PAY-001"
   });
