@@ -29,6 +29,7 @@ describe("purchase posting and reversal helpers", () => {
 
   test("calculates invoice totals and rejects invalid lines", () => {
     expect(calculatePurchaseTotal([{ quantity: 2, purchasePrice: 10.25 }, { quantity: 3, purchasePrice: 4 }])).toBe(32.5);
+    expect(calculatePurchaseTotal([{ quantity: 5, paidQuantity: 4, bonusQuantity: 1, purchasePrice: 10 }])).toBe(40);
     expect(() => calculatePurchaseTotal([{ quantity: 0, purchasePrice: 5 }])).toThrow();
   });
 
@@ -108,7 +109,7 @@ describe("purchase posting and reversal helpers", () => {
       exchangeRateDate: "2026-11-16",
       items: [{
         productId: 5, sourceDescription: "Paracetamol 500mg",
-        quantity: 10, purchasePrice: 12, salePrice: 15,
+        quantity: 10, bonusQuantity: 2, purchasePrice: 12, salePrice: 15,
         batchNumber: "B-1", expiryDate: "31-Dec-2027"
       }]
     });
@@ -119,6 +120,7 @@ describe("purchase posting and reversal helpers", () => {
     expect(draft.exchangeRate).toBe(3.75);
     expect(draft.exchangeRateDate).toBe("2026-11-16");
     expect(draft.items[0].expiryDate).toBe("2027-12-31");
+    expect(draft.items[0].bonusQuantity).toBe(2);
   });
 
   test("rejects duplicate/invalid purchase fields, dates and exchange rates", () => {
