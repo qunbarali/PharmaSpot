@@ -119,23 +119,66 @@ function inferSupplier(lines, text) {
   return "";
 }
 
+function getExplicitRowValue(rawLine, patterns) {
+  for (const pattern of patterns) {
+    const match = String(rawLine || "").match(pattern);
+    if (match && match[1]) return match[1].trim().replace(/[|;,]+$/, "").slice(0, 100);
+  }
+  return "";
+}
+
+function getExplicitRowNumber(rawLine, patterns) {
+  const value = getExplicitRowValue(rawLine, patterns);
+  return value ? parseNumber(value) : null;
+}
+
+function extractExplicitRowFields(rawLine) {
+  const line = String(rawLine || "");
+  const itemCode = getExplicitRowValue(line, [/(?:item\s*code|product\s*code|sku)\s*[:#=]\s*([A-Z0-9/-]+)/i]);
+  const packing = getExplicitRowValue(line, [/(?:pack(?:ing)?|pack\s*size)\s*[:=]\s*([^;|]+)/i]);
+  const bonusQuantity = getExplicitRowNumber(line, [/(?:bonus|free|foc|scheme\s*qty|free\s*qty)\s*[:=]\s*([\d,.]+)/i]);
+  const discountPercent = getExplicitRowNumber(line, [/(?:discount|disc)\s*(?:%|percent|percentage)?\s*[:=]\s*([\d,.]+)\s*%?/i]);
+  const discountAmount = getExplicitRowNumber(line, [/(?:discount|disc)\s*(?:amount|amt)\s*[:=]\s*([\d,.]+)/i]);
+  const grossAmount = getExplicitRowNumber(line, [/(?:gross(?:\s*amount)?|gross\s*total)\s*[:=]\s*([\d,.]+)/i]);
+  const salesTaxPercent = getExplicitRowNumber(line, [/(?:sales\s*tax|gst|tax)\s*(?:%|percent|rate)?\s*[:=]\s*([\d,.]+)\s*%?/i]);
+  const salesTaxAmount = getExplicitRowNumber(line, [/(?:sales\s*tax|gst|tax)\s*(?:amount|amt)\s*[:=]\s*([\d,.]+)/i]);
+  const additionalTaxAmount = getExplicitRowNumber(line, [/(?:additional\s*tax|advance\s*tax|withholding\s*tax|further\s*tax)\s*(?:amount|amt)?\s*[:=]\s*([\d,.]+)/i]);
+  const netAmount = getExplicitRowNumber(line, [/(?:net\s*(?:amount|total)|line\s*total|amount)\s*[:=]\s*([\d,.]+)/i]);
+  const rawExpiry = getExplicitRowValue(line, [/(?:exp(?:iry)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
+  return { itemCode, packing, bonusQuantity: bonusQuantity ?? 0, discountPercent, discountAmount, grossAmount, salesTaxPercent, salesTaxAmount, additionalTaxAmount, netAmount, rawExpiry };
+}
+
 function makeRow(description, values) {
   const productName = String(description || "").trim().replace(/\s{2,}/g, " ").slice(0, 160);
   if (!productName || !Number.isFinite(values.quantity) || values.quantity <= 0 ||
       !Number.isFinite(values.purchasePrice) || values.purchasePrice < 0) return null;
+  const rawLine = String(values.rawLine || "").slice(0, 300);
+  const explicit = extractExplicitRowFields(rawLine);
+  const rawExpiry = String(explicit.rawExpiry || values.rawExpiry || "").trim();
+  const expiryDate = String(values.expiryDate || "").trim();
   return {
-    description: productName,
-    productName,
-    quantity: values.quantity,
-    purchasePrice: values.purchasePrice,
-    unitPrice: values.purchasePrice,
+    description: productName, productName,
+    itemCode: explicit.itemCode, packing: explicit.packing,
+    quantity: values.quantity, paidQuantity: values.quantity,
+    bonusQuantity: explicit.bonusQuantity, freeQuantity: explicit.bonusQuantity,
+    purchasePrice: values.purchasePrice, rate: values.purchasePrice, unitPrice: values.purchasePrice,
     salePrice: Number.isFinite(values.salePrice) ? values.salePrice : null,
-    lineTotal: Number.isFinite(values.lineTotal) ? values.lineTotal : null,
+    grossAmount: explicit.grossAmount, discountPercent: explicit.discountPercent,
+    discountAmount: explicit.discountAmount, salesTaxPercent: explicit.salesTaxPercent,
+    salesTaxAmount: explicit.salesTaxAmount, additionalTaxAmount: explicit.additionalTaxAmount,
+    netAmount: explicit.netAmount,
+    lineTotal: Number.isFinite(values.lineTotal) ? values.lineTotal : (explicit.netAmount ?? null),
     batchNumber: String(values.batchNumber || "").trim().slice(0, 80),
-    expiryDate: String(values.expiryDate || "").trim(),
-    confidence: values.confidence || "low",
-    needsReview: true,
-    rawLine: String(values.rawLine || "").slice(0, 300)
+    rawExpiry, expiryDate,
+    fieldConfidence: {
+      itemCode: explicit.itemCode ? "medium" : "none",
+      packing: explicit.packing ? "medium" : "none",
+      bonusQuantity: explicit.bonusQuantity ? "medium" : "none",
+      discount: explicit.discountPercent !== null || explicit.discountAmount !== null ? "medium" : "none",
+      tax: explicit.salesTaxAmount !== null || explicit.salesTaxPercent !== null ? "medium" : "none"
+    },
+    warnings: ["Confirm all extracted values against the original invoice before posting."],
+    confidence: values.confidence || "low", needsReview: true, rawLine
   };
 }
 
