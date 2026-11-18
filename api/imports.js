@@ -249,11 +249,13 @@ const postPurchaseHandler = (req, res) => {
     async.eachSeries(rows, (row, next) => {
       const productId = Number(row.productId);
       const quantity = Number(row.quantity);
+      const bonusQuantity = Number(row.bonusQuantity == null || row.bonusQuantity === "" ? 0 : row.bonusQuantity);
+      const receivedQuantity = quantity + bonusQuantity;
       const purchasePrice = Number(row.purchasePrice);
       const salePrice = Number(row.salePrice);
       const batchNumber = String(row.batchNumber || "").trim();
       const expiryDate = normalizeExpiryDate(row.expiryDate);
-      if (!Number.isSafeInteger(productId) || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(purchasePrice) || purchasePrice < 0 || !Number.isFinite(salePrice) || salePrice < 0 || !batchNumber || !expiryDate) {
+      if (!Number.isSafeInteger(productId) || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(bonusQuantity) || bonusQuantity < 0 || !Number.isFinite(receivedQuantity) || receivedQuantity <= 0 || !Number.isFinite(purchasePrice) || purchasePrice < 0 || !Number.isFinite(salePrice) || salePrice < 0 || !batchNumber || !expiryDate) {
         return next(new Error("Every row needs a valid product, quantity, purchase price, sale price, batch number and expiry date."));
       }
       inventoryDB.findOne({ _id: productId }, (findError, product) => {
@@ -263,7 +265,9 @@ const postPurchaseHandler = (req, res) => {
           importLineId,
           batchNumber,
           expiryDate,
-          quantity,
+          quantity: receivedQuantity,
+          paidQuantity: quantity,
+          bonusQuantity,
           purchasePrice,
           salePrice,
           baseCurrency,
@@ -288,7 +292,7 @@ const postPurchaseHandler = (req, res) => {
           expirationDate: product.expirationDate ?? null
         };
         const batches = Array.isArray(product.batches) ? product.batches.concat([batch]) : [batch];
-        const newQuantity = Number(product.quantity || 0) + quantity;
+        const newQuantity = Number(product.quantity || 0) + receivedQuantity;
         const updateFields = {
           quantity: newQuantity,
           price: String(convertToBaseCurrency(salePrice, rate, 2)),
@@ -303,7 +307,7 @@ const postPurchaseHandler = (req, res) => {
           if (updateError || !count) { snapshots.pop(); return next(updateError || new Error("Stock changed during purchase posting.")); }
           snapshot.after = { ...JSON.parse(JSON.stringify(product)), ...updateFields };
           applied.push({
-            importLineId, productId, quantity, purchasePrice, salePrice, batchNumber, expiryDate,
+            importLineId, productId, quantity: receivedQuantity, paidQuantity: quantity, bonusQuantity, purchasePrice, salePrice, batchNumber, expiryDate,
             sourceDescription: String(row.sourceDescription || row.productName || row.description || "").trim().slice(0, 160),
             previousProductFields,
             postedProductFields: { price: updateFields.price, supplier: updateFields.supplier, purchasePrice: updateFields.purchasePrice, expirationDate: updateFields.expirationDate }
