@@ -13,6 +13,13 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("recognizes common distributor free-quantity labels", () => {
+    const bonus = parseInvoiceText("Supplier\nProduct: Cetirizine 10mg; Qty: 10; Purchase: 3; Bonus Qty: 2; Batch: C-10; Expiry: 11/2028");
+    const foc = parseInvoiceText("Supplier\nProduct: Vitamin C; Qty: 6; Purchase: 4; FOC: 1; Batch: V-01; Expiry: 10/2028");
+    expect(bonus.rows[0]).toMatchObject({ paidQuantity: 10, bonusQuantity: 2, freeQuantity: 2 });
+    expect(foc.rows[0]).toMatchObject({ paidQuantity: 6, bonusQuantity: 1, freeQuantity: 1 });
+  });
+
   test("normalizes OCR whitespace and bounds output", () => {
     expect(normalizeText("  ABC  \r\n\r\n\r\n  123  ")).toBe("ABC\n\n 123");
     expect(normalizeText("x".repeat(250000))).toHaveLength(200000);
