@@ -112,7 +112,7 @@ function runInvoiceOcr(files) {
           updateImportExchangeRate();
         }
         if (result.rows && result.rows.length) {
-          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table>');
+          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table>');
           result.rows.forEach(invoiceRow => {
             const description = invoiceRow.productName || invoiceRow.description || "";
             const suggestedId = bestInvoiceProductMatch(description);
@@ -136,6 +136,7 @@ function runInvoiceOcr(files) {
               $("<td></td>").text(description || "Not detected"),
               $("<td></td>").append(select),
               $("<td></td>").text(invoiceRow.quantity ?? "Not detected"),
+              $("<td></td>").text(invoiceRow.bonusQuantity ?? invoiceRow.freeQuantity ?? 0),
               $("<td></td>").text(invoiceRow.purchasePrice ?? invoiceRow.unitPrice ?? "Not detected"),
               $("<td></td>").text(invoiceRow.salePrice ?? "Not detected"),
               $("<td></td>").text(invoiceRow.batchNumber || "Not detected"),
@@ -144,7 +145,7 @@ function runInvoiceOcr(files) {
             );
             suggestions.find("tbody").append(line);
           });
-          body.append($('<p class="text-warning"></p>').text("Add each detected line to the editable purchase table. You can correct the description, product, quantity, purchase price, sale price, batch and expiry before saving the draft."), suggestions);
+          body.append($('<p class="text-warning"></p>').text("Add each detected line to the editable purchase table. You can correct the description, product, paid quantity, bonus/free quantity, purchase price, sale price, batch and expiry before saving the draft."), suggestions);
         } else {
           body.append($('<p class="text-warning"></p>').text("No structured invoice lines were detected. Review the extracted text and enter each invoice line manually."));
         }
