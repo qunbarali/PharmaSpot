@@ -9,7 +9,7 @@ describe("invoice OCR text parsing", () => {
     expect(result.rows[0]).toMatchObject({
       productName: "Paracetamol 500mg", paidQuantity: 4, bonusQuantity: 1, freeQuantity: 1,
       packing: "10x10", discountPercent: 5, grossAmount: 500, salesTaxPercent: 2,
-      salesTaxAmount: 10, netAmount: 485, rawExpiry: "12/2027", needsReview: true
+      salesTaxAmount: 10, netAmount: 485, lineTotal: 485, rawExpiry: "12/2027", needsReview: true
     });
   });
 
