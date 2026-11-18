@@ -29,7 +29,8 @@ function addPurchaseRow(values = {}) {
   const row = $('<tr>' +
     '<td><input class="form-control import-description" type="text" placeholder="Invoice item description"></td>' +
     '<td><select class="form-control import-product">' + productOptions(values.productId) + '</select></td>' +
-    '<td><input class="form-control import-quantity" type="number" min="0.001" step="any" placeholder="Qty"></td>' +
+    '<td><input class="form-control import-quantity" type="number" min="0.001" step="any" placeholder="Paid qty"></td>' +
+    '<td><input class="form-control import-bonus" type="number" min="0" step="any" placeholder="Free qty (0)"></td>' +
     '<td><input class="form-control import-cost" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
     '<td><input class="form-control import-sale" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
     '<td><input class="form-control import-batch" type="text" placeholder="Batch"></td>' +
@@ -40,6 +41,7 @@ function addPurchaseRow(values = {}) {
   row.find(".import-description").val(values.sourceDescription || values.productName || values.description || "");
   row.find(".import-product").val(values.productId || "");
   row.find(".import-quantity").val(values.quantity ?? "");
+  row.find(".import-bonus").val(values.bonusQuantity ?? values.freeQuantity ?? 0);
   row.find(".import-cost").val(values.purchasePrice ?? "");
   row.find(".import-sale").val(values.salePrice ?? "");
   row.find(".import-batch").val(values.batchNumber || "");
@@ -122,6 +124,7 @@ function runInvoiceOcr(files) {
                 sourceDescription: description,
                 productId: select.val(),
                 quantity: invoiceRow.quantity,
+                bonusQuantity: invoiceRow.bonusQuantity ?? invoiceRow.freeQuantity ?? 0,
                 purchasePrice: invoiceRow.purchasePrice ?? invoiceRow.unitPrice ?? "",
                 salePrice: invoiceRow.salePrice ?? "",
                 batchNumber: invoiceRow.batchNumber || "",
@@ -435,6 +438,7 @@ $(function () {
         sourceDescription: row.find(".import-description").val(),
         productId: row.find(".import-product").val(),
         quantity: row.find(".import-quantity").val(),
+        bonusQuantity: row.find(".import-bonus").val() || 0,
         purchasePrice: row.find(".import-cost").val(),
         salePrice: row.find(".import-sale").val(),
         batchNumber: row.find(".import-batch").val(),
