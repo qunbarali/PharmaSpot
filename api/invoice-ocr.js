@@ -194,7 +194,7 @@ function parseLabeledRow(line) {
   const total = parseNumber(getLabeledValue(line, [/(?:line\s*total|amount|total)\s*[:=]\s*([\d,.]+)/i]));
   const explicit = extractExplicitRowFields(line);
   return makeRow(description, {
-    quantity, purchasePrice, salePrice, lineTotal: total, batchNumber, expiryDate,
+    quantity, purchasePrice, salePrice, batchNumber, expiryDate,
     lineTotal: explicit.netAmount ?? total,
     confidence: "medium", rawLine: line
   });
