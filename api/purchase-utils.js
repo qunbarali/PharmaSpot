@@ -11,10 +11,10 @@ function findReversalBatchIndex(batches, item) {
 
 function calculatePurchaseTotal(items) {
   return (Array.isArray(items) ? items : []).reduce((sum, item) => {
-    const quantity = Number(item && item.quantity);
+    const quantity = Number(item && (item.paidQuantity == null ? item.quantity : item.paidQuantity));
     const price = Number(item && item.purchasePrice);
     if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) {
-      throw new Error("Purchase lines contain an invalid quantity or purchase price.");
+      throw new Error("Purchase lines contain an invalid paid quantity or purchase price.");
     }
     return sum + quantity * price;
   }, 0);
@@ -144,13 +144,16 @@ function validatePurchaseDraft(input) {
   const normalizedItems = items.map(item => {
     const productId = Number(item.productId);
     const salePrice = Number(item.salePrice);
+    const bonusQuantity = Number(item.bonusQuantity == null || item.bonusQuantity === "" ? 0 : item.bonusQuantity);
     const expiryDate = normalizeExpiryDate(item.expiryDate);
+    if (!Number.isFinite(bonusQuantity) || bonusQuantity < 0) throw new Error("Bonus/free quantity must be zero or a positive number.");
     if (!Number.isSafeInteger(productId) || productId <= 0 || !Number.isFinite(salePrice) || salePrice < 0 ||
         !String(item.batchNumber || "").trim() || !expiryDate) {
       throw new Error("Every invoice line needs a valid product, sale price, batch number and expiry date.");
     }
     return {
       ...item,
+      bonusQuantity,
       expiryDate,
       sourceDescription: String(item.sourceDescription || item.productName || item.description || "").trim().slice(0, 160)
     };
