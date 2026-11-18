@@ -8,7 +8,7 @@ const MAX_PDF_PAGES = 30;
 const MAX_RENDER_PIXELS = 12000000;
 const optionalRequire = name => { try { return require(name); } catch (_) { return null; } };
 
-const DATE_SOURCE = "(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}|\\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4})";
+const DATE_SOURCE = "(?:\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{2,4}|\d{1,2}[./-]\d{4}|\d{4}[./-]\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})";
 const NUMBER_SOURCE = "(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d{1,4})?";
 const NUMBER_RE = new RegExp(NUMBER_SOURCE, "g");
 const CURRENCY_CODES = new Set(["PKR", "INR", "USD"]);
@@ -45,6 +45,27 @@ function normalizeDate(value) {
     let year = Number(match[3]);
     if (year < 100) year += year >= 70 ? 1900 : 2000;
     return toIsoDate(year, match[2], match[1]);
+  }
+  match = raw.match(/^(\d{4})[./-](\d{1,2})$/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return toIsoDate(year, month, day);
+  }
+  match = raw.match(/^(\d{1,2})[./-](\d{4})$/);
+  if (match) {
+    const month = Number(match[1]);
+    const year = Number(match[2]);
+    const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return toIsoDate(year, month, day);
+  }
+  match = raw.match(/^([A-Za-z]{3,9})\s+(\d{4})$/);
+  if (match) {
+    const month = MONTHS[match[1].toLowerCase()];
+    const year = Number(match[2]);
+    const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return toIsoDate(year, month, day);
   }
   match = raw.match(/^(\d{1,2})[- ]([A-Za-z]{3,9})[- ](\d{2,4})$/);
   if (match) {

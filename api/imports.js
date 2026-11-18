@@ -10,7 +10,7 @@ const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
 const { writeAudit, authorizeAdmin } = require("./audit");
-const { planPurchaseReversal, calculatePurchaseTotal, convertToBaseCurrency, normalizeInvoiceKey, validatePurchaseDraft } = require("./purchase-utils");
+const { planPurchaseReversal, calculatePurchaseTotal, convertToBaseCurrency, normalizeInvoiceKey, normalizeExpiryDate, validatePurchaseDraft } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -252,7 +252,7 @@ const postPurchaseHandler = (req, res) => {
       const purchasePrice = Number(row.purchasePrice);
       const salePrice = Number(row.salePrice);
       const batchNumber = String(row.batchNumber || "").trim();
-      const expiryDate = String(row.expiryDate || "").trim();
+      const expiryDate = normalizeExpiryDate(row.expiryDate);
       if (!Number.isSafeInteger(productId) || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(purchasePrice) || purchasePrice < 0 || !Number.isFinite(salePrice) || salePrice < 0 || !batchNumber || !expiryDate) {
         return next(new Error("Every row needs a valid product, quantity, purchase price, sale price, batch number and expiry date."));
       }

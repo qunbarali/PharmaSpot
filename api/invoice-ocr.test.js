@@ -16,6 +16,14 @@ describe("invoice OCR text parsing", () => {
     expect(normalizeDate("31-02-2027")).toBe("");
   });
 
+  test("normalizes month/year expiry dates to the final calendar day", () => {
+    expect(normalizeDate("12/2027")).toBe("2027-12-31");
+    expect(normalizeDate("2027-12")).toBe("2027-12-31");
+    expect(normalizeDate("Dec 2027")).toBe("2027-12-31");
+    const result = parseInvoiceText("Supplier\nProduct: Amoxicillin 250mg; Qty: 5; Purchase: 8.25; Sale: 12; Batch: B-20; Expiry: 12/2027");
+    expect(result.rows[0].expiryDate).toBe("2027-12-31");
+  });
+
   test("extracts supplier identifiers and editable product, price, batch and expiry fields", () => {
     const result = parseInvoiceText([
       "ABC PHARMA DISTRIBUTORS",

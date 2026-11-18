@@ -50,6 +50,48 @@ function isIsoDate(value) {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+const EXPIRY_MONTHS = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+  may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11,
+  dec: 12, december: 12
+};
+function toExpiryIso(year, month, day) {
+  let y = Number(year);
+  if (y < 100) y += y >= 70 ? 1900 : 2000;
+  const m = Number(month);
+  const d = Number(day);
+  if (!Number.isInteger(y) || y < 1900 || y > 2200 || !Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(d) || d < 1 || d > 31) return "";
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return "";
+  return date.toISOString().slice(0, 10);
+}
+function monthEndExpiry(year, month) {
+  const y = Number(year);
+  const m = Number(month);
+  if (!Number.isInteger(y) || y < 1900 || y > 2200 || !Number.isInteger(m) || m < 1 || m > 12) return "";
+  return toExpiryIso(y, m, new Date(Date.UTC(y, m, 0)).getUTCDate());
+}
+function normalizeExpiryDate(value) {
+  const raw = String(value || "").trim().replace(/,/g, "");
+  if (isIsoDate(raw)) return Number(raw.slice(0, 4)) >= 1900 && Number(raw.slice(0, 4)) <= 2200 ? raw : "";
+  let match = raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (match) return toExpiryIso(match[1], match[2], match[3]);
+  match = raw.match(/^(\d{1,2})[./-](\d{4})$/);
+  if (match) return monthEndExpiry(match[2], match[1]);
+  match = raw.match(/^(\d{4})[./-](\d{1,2})$/);
+  if (match) return monthEndExpiry(match[1], match[2]);
+  match = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (match) return toExpiryIso(match[3], match[2], match[1]);
+  match = raw.match(/^(\d{1,2})[- ]([A-Za-z]{3,9})[- ](\d{2,4})$/);
+  if (match) return toExpiryIso(match[3], EXPIRY_MONTHS[match[2].toLowerCase()], match[1]);
+  match = raw.match(/^([A-Za-z]{3,9})\s+(\d{1,2})\s+(\d{2,4})$/);
+  if (match) return toExpiryIso(match[3], EXPIRY_MONTHS[match[1].toLowerCase()], match[2]);
+  match = raw.match(/^([A-Za-z]{3,9})\s+(\d{4})$/);
+  if (match) return monthEndExpiry(match[2], EXPIRY_MONTHS[match[1].toLowerCase()]);
+  return "";
+}
+
 function planPurchaseReversal(product, item) {
   if (!product || !item) throw new Error("Purchase product or line is missing.");
   const batches = Array.isArray(product.batches) ? product.batches : [];
@@ -102,12 +144,14 @@ function validatePurchaseDraft(input) {
   const normalizedItems = items.map(item => {
     const productId = Number(item.productId);
     const salePrice = Number(item.salePrice);
+    const expiryDate = normalizeExpiryDate(item.expiryDate);
     if (!Number.isSafeInteger(productId) || productId <= 0 || !Number.isFinite(salePrice) || salePrice < 0 ||
-        !String(item.batchNumber || "").trim() || !String(item.expiryDate || "").trim()) {
+        !String(item.batchNumber || "").trim() || !expiryDate) {
       throw new Error("Every invoice line needs a valid product, sale price, batch number and expiry date.");
     }
     return {
       ...item,
+      expiryDate,
       sourceDescription: String(item.sourceDescription || item.productName || item.description || "").trim().slice(0, 160)
     };
   });
@@ -131,6 +175,7 @@ module.exports = {
   convertToBaseCurrency,
   normalizeInvoiceKey,
   isIsoDate,
+  normalizeExpiryDate,
   planPurchaseReversal,
   validatePurchaseDraft
 };

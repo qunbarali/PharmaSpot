@@ -4,6 +4,7 @@ const {
   convertToBaseCurrency,
   normalizeInvoiceKey,
   isIsoDate,
+  normalizeExpiryDate,
   planPurchaseReversal,
   validatePurchaseDraft
 } = require("./purchase-utils");
@@ -48,6 +49,15 @@ describe("purchase posting and reversal helpers", () => {
     expect(isIsoDate("2026-11-16")).toBe(true);
     expect(isIsoDate("2026-02-30")).toBe(false);
     expect(isIsoDate("16-11-2026")).toBe(false);
+  });
+
+  test("normalizes full and month-only expiry dates, rejecting impossible dates", () => {
+    expect(normalizeExpiryDate("2027-12-31")).toBe("2027-12-31");
+    expect(normalizeExpiryDate("31-Dec-2027")).toBe("2027-12-31");
+    expect(normalizeExpiryDate("12/2027")).toBe("2027-12-31");
+    expect(normalizeExpiryDate("2027-12")).toBe("2027-12-31");
+    expect(normalizeExpiryDate("Dec 2027")).toBe("2027-12-31");
+    expect(normalizeExpiryDate("31/02/2027")).toBe("");
   });
 
   test("plans a safe reversal and restores unchanged product metadata", () => {
@@ -108,6 +118,7 @@ describe("purchase posting and reversal helpers", () => {
     expect(draft.baseCurrency).toBe("PKR");
     expect(draft.exchangeRate).toBe(3.75);
     expect(draft.exchangeRateDate).toBe("2026-11-16");
+    expect(draft.items[0].expiryDate).toBe("2027-12-31");
   });
 
   test("rejects duplicate/invalid purchase fields, dates and exchange rates", () => {
@@ -121,5 +132,6 @@ describe("purchase posting and reversal helpers", () => {
     expect(() => validatePurchaseDraft({ ...valid, exchangeRateDate: "2026-02-30" })).toThrow(/exchange-rate date/i);
     expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], quantity: -1 }] })).toThrow();
     expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], productId: "x" }] })).toThrow(/valid product/i);
+    expect(() => validatePurchaseDraft({ ...valid, items: [{ ...valid.items[0], expiryDate: "31-Feb-2027" }] })).toThrow(/expiry date/i);
   });
 });
