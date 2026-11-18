@@ -126,6 +126,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
       productId,
       sourceDescription: "Integration Test Medicine 500mg",
       quantity: invoiceNo === "INV-001" ? 5 : 2,
+      bonusQuantity: invoiceNo === "INV-001" ? 2 : 0,
       purchasePrice: 4,
       salePrice: 6,
       batchNumber: invoiceNo === "INV-001" ? "BATCH-001" : "BATCH-002",
@@ -147,13 +148,15 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const firstApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(firstDraft.data.draftId), { confirm: true });
   expect(firstApproval.status).toBe(200);
   expect(firstApproval.data.success).toBe(true);
-  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(15);
+  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(17);
 
   let history = await request("GET", "/imports/history");
   let firstImport = history.data.find(record => record.invoiceNo === "INV-001" && record.status === "posted");
   expect(firstImport).toBeDefined();
   expect(firstImport).toMatchObject({ supplierIdentifier: "SUP-007", invoiceDate: "2026-11-15", exchangeRateDate: "2026-11-16", currency: "PKR", baseCurrency: "PKR", exchangeRate: 1 });
-  expect(await supplierLedger.getLedgerEvent("purchase:" + firstImport._id)).toBeDefined();
+  expect(firstImport.items[0]).toMatchObject({ quantity: 7, paidQuantity: 5, bonusQuantity: 2 });
+  expect((await findOne(inventoryDB, { _id: productId })).batches.find(batch => batch.importLineId === firstImport.items[0].importLineId).quantity).toBe(7);
+  expect(await supplierLedger.getLedgerEvent("purchase:" + firstImport._id)).toMatchObject({ amount: 20 });
 
   const firstReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(firstImport._id), {
     confirm: true, reason: "Integration test: supplier invoice correction"
