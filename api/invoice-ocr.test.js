@@ -4,6 +4,15 @@ const path = require("path");
 const { normalizeText, normalizeDate, parseInvoiceText, extractInvoice } = require("./invoice-ocr");
 
 describe("invoice OCR text parsing", () => {
+  test("captures explicitly labeled packing, bonus, discount and tax values separately", () => {
+    const result = parseInvoiceText("Supplier\nProduct: Paracetamol 500mg; Pack: 10x10; Qty: 4; Purchase: 125; Bonus: 1; Discount: 5%; Gross: 500; Sales Tax: 2%; Tax Amount: 10; Net Amount: 485; Batch: B-01; Expiry: 12/2027");
+    expect(result.rows[0]).toMatchObject({
+      productName: "Paracetamol 500mg", paidQuantity: 4, bonusQuantity: 1, freeQuantity: 1,
+      packing: "10x10", discountPercent: 5, grossAmount: 500, salesTaxPercent: 2,
+      salesTaxAmount: 10, netAmount: 485, rawExpiry: "12/2027", needsReview: true
+    });
+  });
+
   test("normalizes OCR whitespace and bounds output", () => {
     expect(normalizeText("  ABC  \r\n\r\n\r\n  123  ")).toBe("ABC\n\n 123");
     expect(normalizeText("x".repeat(250000))).toHaveLength(200000);
