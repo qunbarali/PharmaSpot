@@ -242,7 +242,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const bonusHistory = await request("GET", "/imports/history");
   const bonusImport = bonusHistory.data.find(record => record.invoiceNo === "INV-BONUS" && record.status === "posted");
   expect(bonusImport.items[0]).toMatchObject({ quantity: 6, paidQuantity: 4, bonusQuantity: 2 });
-  expect(bonusImport.total).toBe(20);
+  const bonusLedgerEvent = await supplierLedger.getLedgerEvent("purchase:" + bonusImport._id);
+  expect(bonusLedgerEvent.amount).toBe(20);
   const bonusReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(bonusImport._id), {
     confirm: true, reason: "Integration test: reverse bonus quantity purchase"
   });
