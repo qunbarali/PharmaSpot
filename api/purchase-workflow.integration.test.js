@@ -50,6 +50,35 @@ function request(method, route, body, token = adminToken) {
   });
 }
 
+function uploadRequest(filename, content, token = adminToken) {
+  const boundary = "----PharmaSpotIntegrationBoundary";
+  const payload = Buffer.concat([
+    Buffer.from("--" + boundary + "\r\nContent-Disposition: form-data; name=\"files\"; filename=\"" + filename + "\"\r\nContent-Type: application/octet-stream\r\n\r\n"),
+    content,
+    Buffer.from("\r\n--" + boundary + "--\r\n")
+  ]);
+  const headers = {
+    "Content-Type": "multipart/form-data; boundary=" + boundary,
+    "Content-Length": payload.length
+  };
+  if (token) headers.Authorization = "Bearer " + token;
+  return new Promise((resolve, reject) => {
+    const req = http.request({ hostname: "127.0.0.1", port, method: "POST", path: "/imports/upload", headers }, res => {
+      const chunks = [];
+      res.on("data", chunk => chunks.push(chunk));
+      res.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf8");
+        let data = text;
+        try { data = text ? JSON.parse(text) : null; } catch (_) {}
+        resolve({ status: res.statusCode, data });
+      });
+    });
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 beforeAll(async () => {
   const appDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pharmaspot-workflow-"));
   process.env.APPDATA = appDataRoot;
@@ -108,6 +137,13 @@ afterAll(async () => {
 });
 
 test("purchase approval, controlled reversal, supplier payment, reconciliation and audit work end to end", async () => {
+  expect((await request("POST", "/imports/upload", {}, null)).status).toBe(401);
+  expect((await request("POST", "/imports/ocr/not-a-file.pdf", undefined, null)).status).toBe(401);
+  expect((await request("POST", "/imports/assign-image", { productId, storedName: "not-a-file.jpg" }, null)).status).toBe(401);
+  const malformedUpload = await uploadRequest("invoice.pdf", Buffer.from("not a PDF"));
+  expect(malformedUpload.status).toBe(400);
+  expect(fs.readdirSync(importRoot)).toHaveLength(0);
+
   const deniedDraft = await request("POST", "/imports/commit-purchase", {
     supplier: "Demo Distributor", invoiceNo: "DENIED", currency: "PKR", items: []
   }, null);
@@ -263,6 +299,37 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   });
   expect(bonusReversal.status).toBe(200);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+
+  const usdDraft = await request("POST", "/imports/commit-purchase", {
+    supplier: "Demo Distributor", supplierIdentifier: "SUP-007", invoiceNo: "INV-USD-003",
+    invoiceDate: "2026-11-17", currency: "USD", baseCurrency: "PKR", exchangeRate: 280,
+    exchangeRateDate: "2026-11-18",
+    items: [{ productId, sourceDescription: "USD invoice conversion test", quantity: 2, bonusQuantity: 1,
+      purchasePrice: 4.5, salePrice: 6.5, batchNumber: "USD-BATCH-003", expiryDate: "2032-12-31" }]
+  });
+  expect(usdDraft.status).toBe(201);
+  const usdApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(usdDraft.data.draftId), { confirm: true });
+  expect(usdApproval.status).toBe(200);
+  const usdHistory = await request("GET", "/imports/history");
+  const usdImport = usdHistory.data.find(record => record.invoiceNo === "INV-USD-003" && record.status === "posted");
+  expect(usdImport).toBeDefined();
+  expect(usdImport).toMatchObject({ currency: "USD", baseCurrency: "PKR", exchangeRate: 280, exchangeRateDate: "2026-11-18" });
+  const usdProduct = await findOne(inventoryDB, { _id: productId });
+  const usdBatch = usdProduct.batches.find(batch => batch.importLineId === usdImport.items[0].importLineId);
+  expect(usdBatch).toMatchObject({
+    quantity: 3, paidQuantity: 2, bonusQuantity: 1,
+    purchasePrice: 4.5, salePrice: 6.5,
+    basePurchasePrice: 1260, baseSalePrice: 1820,
+    currency: "USD", baseCurrency: "PKR", exchangeRate: 280,
+    exchangeRateDate: "2026-11-18"
+  });
+  expect(await supplierLedger.getLedgerEvent("purchase:" + usdImport._id)).toMatchObject({ amount: 9, currency: "USD" });
+  const usdReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(usdImport._id), {
+    confirm: true, reason: "Integration test: reverse USD invoice conversion"
+  });
+  expect(usdReversal.status).toBe(200);
+  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+  expect(await supplierLedger.getLedgerEvent("purchase-reversal:" + usdImport._id)).toMatchObject({ amount: 9, currency: "USD" });
 
   const payment = await request("POST", "/supplier-ledger/payment", {
     supplier: "Demo Distributor", amount: 100, currency: "PKR", reference: "PAY-001"
