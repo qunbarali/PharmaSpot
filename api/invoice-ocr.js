@@ -585,6 +585,50 @@ async function recognizeCanvasWithRotation(canvas, worker) {
   return best ? best.text : "";
 }
 
+function readWebpDimensions(buffer) {
+  if (buffer.length < 20 || buffer.toString("ascii", 0, 4) !== "RIFF" ||
+      buffer.toString("ascii", 8, 12) !== "WEBP") return null;
+  const riffSize = buffer.readUInt32LE(4);
+  const riffEnd = Math.min(buffer.length, riffSize + 8);
+  if (riffSize < 4 || riffEnd < 20) return null;
+
+  let offset = 12;
+  while (offset + 8 <= riffEnd) {
+    const chunkType = buffer.toString("ascii", offset, offset + 4);
+    const chunkSize = buffer.readUInt32LE(offset + 4);
+    const dataOffset = offset + 8;
+    const chunkEnd = dataOffset + chunkSize;
+    if (!Number.isSafeInteger(chunkEnd) || chunkEnd > riffEnd) return null;
+
+    if (chunkType === "VP8X" && chunkSize >= 10) {
+      return {
+        width: 1 + buffer.readUIntLE(dataOffset + 4, 3),
+        height: 1 + buffer.readUIntLE(dataOffset + 7, 3)
+      };
+    }
+    if (chunkType === "VP8L" && chunkSize >= 5 && buffer[dataOffset] === 0x2f) {
+      const b1 = buffer[dataOffset + 1];
+      const b2 = buffer[dataOffset + 2];
+      const b3 = buffer[dataOffset + 3];
+      const b4 = buffer[dataOffset + 4];
+      return {
+        width: 1 + ((b1 & 0x3f) | ((b2 & 0x0f) << 6)),
+        height: 1 + (((b2 & 0xf0) >> 4) | (b3 << 4) | ((b4 & 0x03) << 12))
+      };
+    }
+    if (chunkType === "VP8 " && chunkSize >= 10 &&
+        buffer[dataOffset + 3] === 0x9d && buffer[dataOffset + 4] === 0x01 && buffer[dataOffset + 5] === 0x2a) {
+      return {
+        width: buffer.readUInt16LE(dataOffset + 6) & 0x3fff,
+        height: buffer.readUInt16LE(dataOffset + 8) & 0x3fff
+      };
+    }
+
+    offset = chunkEnd + (chunkSize & 1);
+  }
+  return null;
+}
+
 function readImageDimensions(buffer) {
   if (buffer.length >= 24 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
@@ -607,12 +651,21 @@ function readImageDimensions(buffer) {
       offset += segmentLength;
     }
   }
+  if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+    return readWebpDimensions(buffer);
+  }
   return null;
 }
 
 async function recognizeImageBuffer(buffer, maxPixels) {
   const { createCanvas, loadImage } = require("@napi-rs/canvas");
   const declaredDimensions = readImageDimensions(buffer);
+  const isPng = buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const isJpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  const isWebp = buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP";
+  if ((isPng || isJpeg || isWebp) && !declaredDimensions) {
+    throw new Error("The uploaded image has invalid or unreadable dimensions.");
+  }
   if (declaredDimensions) {
     const declaredPixels = declaredDimensions.width * declaredDimensions.height;
     if (!declaredDimensions.width || !declaredDimensions.height || !Number.isSafeInteger(declaredPixels) || declaredPixels > maxPixels) {
