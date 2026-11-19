@@ -1,7 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { createCanvas } = require("@napi-rs/canvas");
+const { createCanvas, loadImage } = require("@napi-rs/canvas");
 const { extractInvoice } = require("./invoice-ocr");
 
 jest.setTimeout(120000);
@@ -17,6 +17,16 @@ function makeInvoiceImage(format = "image/jpeg") {
   context.font = "bold 66px Arial";
   context.fillText("PARACETAMOL 500MG 10 12.50 125.00", 70, 330);
   return canvas.toBuffer(format);
+}
+
+async function makeRotatedInvoiceImage() {
+  const image = await loadImage(makeInvoiceImage());
+  const canvas = createCanvas(image.height, image.width);
+  const context = canvas.getContext("2d");
+  context.translate(canvas.width / 2, canvas.height / 2);
+  context.rotate(Math.PI / 2);
+  context.drawImage(image, -image.width / 2, -image.height / 2);
+  return canvas.toBuffer("image/jpeg");
 }
 
 function makeTextPdf() {
@@ -112,6 +122,14 @@ describe("offline invoice OCR integration", () => {
   test("recognizes text from a local JPEG invoice image", async () => {
     const imagePath = path.join(directory, "invoice.jpeg");
     fs.writeFileSync(imagePath, makeInvoiceImage());
+    const result = await extractInvoice(imagePath);
+    expect(result.reviewRequired).toBe(true);
+    expect(result.text.toUpperCase()).toContain("INVOICE");
+  });
+
+  test("corrects a 90-degree rotated distributor invoice image", async () => {
+    const imagePath = path.join(directory, "rotated-invoice.jpg");
+    fs.writeFileSync(imagePath, await makeRotatedInvoiceImage());
     const result = await extractInvoice(imagePath);
     expect(result.reviewRequired).toBe(true);
     expect(result.text.toUpperCase()).toContain("INVOICE");
