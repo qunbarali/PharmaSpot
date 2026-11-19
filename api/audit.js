@@ -6,7 +6,7 @@ const dbDir = path.join(process.env.APPDATA, process.env.APPNAME, "server", "dat
 const auditDB = new Datastore({ filename: path.join(dbDir, "admin-audit.db"), autoload: true });
 const usersDB = new Datastore({ filename: path.join(dbDir, "users.db"), autoload: true });
 const sessionsDB = new Datastore({ filename: path.join(dbDir, "user-sessions.db"), autoload: true });
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 auditDB.ensureIndex({ fieldName: "eventKey", unique: true, sparse: true });
 sessionsDB.ensureIndex({ fieldName: "tokenHash", unique: true });
 
