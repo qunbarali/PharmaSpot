@@ -205,7 +205,7 @@ function parseLabeledRow(line) {
   const purchasePrice = parseNumber(getLabeledValue(line, [/(?:purchase\s*price|cost\s*price|unit\s*price|rate|purchase|cost)\s*[:=]\s*([\d,.]+)/i]));
   const salePrice = parseNumber(getLabeledValue(line, [/(?:sale\s*price|retail\s*price|mrp|sale)\s*[:=]\s*([\d,.]+)/i]));
   const batchNumber = getLabeledValue(line, [/(?:batch|lot)\s*(?:no|number|#)?\s*[:=]\s*([A-Z0-9][A-Z0-9/-]*)/i]);
-  const expiryRaw = getLabeledValue(line, [/(?:exp(?:iry)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
+  const expiryRaw = getLabeledValue(line, [/(?:exp(?:iry)?(?:\s*date)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
   const expiryDate = normalizeDate(expiryRaw) || expiryRaw;
   const total = parseNumber(getLabeledValue(line, [/(?:line\s*total|amount|total)\s*[:=]\s*([\d,.]+)/i]));
   const explicit = extractExplicitRowFields(line);
@@ -249,7 +249,7 @@ function parseDelimitedRow(line, header) {
     /disc(?:ount)?/.test(column) && /amount|amt|extra/.test(column)
   );
   const salesTaxIndex = indexFor(/sales?\s*tax|gst/);
-  const additionalTaxIndex = indexFor(/further|additional|advance|awh|withholding/);
+  const additionalTaxIndex = indexFor(/fur(?:ther)?\.?\s*tax|additional|advance|awh|withholding/);
   const netIndex = indexFor(/net/);
   const totalIndex = netIndex >= 0 ? netIndex : columns.findIndex(column =>
     /line\s*total|\bamount\b|\btotal\b/.test(column) && !/gross|discount|tax/.test(column)
