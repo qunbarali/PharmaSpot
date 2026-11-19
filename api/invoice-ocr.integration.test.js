@@ -144,9 +144,9 @@ describe("offline invoice OCR integration", () => {
 
   test("preflights VP8L and VP8 WEBP dimensions before decoding", async () => {
     const losslessPath = path.join(directory, "oversized-lossless.webp");
-    const lossless = Buffer.alloc(25);
+    const lossless = Buffer.alloc(26);
     lossless.write("RIFF", 0, "ascii");
-    lossless.writeUInt32LE(17, 4);
+    lossless.writeUInt32LE(18, 4);
     lossless.write("WEBP", 8, "ascii");
     lossless.write("VP8L", 12, "ascii");
     lossless.writeUInt32LE(5, 16);
