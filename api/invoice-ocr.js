@@ -249,7 +249,10 @@ function parseDelimitedRow(line, header) {
     /disc(?:ount)?/.test(column) && /amount|amt|extra/.test(column)
   );
   const salesTaxIndex = indexFor(/sales?\s*tax|gst/);
-  const additionalTaxIndex = indexFor(/fur(?:ther)?\.?\s*tax|additional|advance|awh|withholding/);
+  const additionalTaxIndexes = columns.reduce((indexes, column, index) => {
+    if (/fur(?:ther)?\.?\s*tax|additional|advance|awh|withholding/.test(column) && !/%|rate|percent/.test(column)) indexes.push(index);
+    return indexes;
+  }, []);
   const netIndex = indexFor(/net/);
   const totalIndex = netIndex >= 0 ? netIndex : columns.findIndex(column =>
     /line\s*total|\bamount\b|\btotal\b/.test(column) && !/gross|discount|tax/.test(column)
@@ -266,6 +269,8 @@ function parseDelimitedRow(line, header) {
   const expiryDate = normalizeDate(expiryRaw) || expiryRaw;
   const salesTaxHeader = salesTaxIndex >= 0 ? columns[salesTaxIndex] : "";
   const salesTaxValue = parseNumber(get(salesTaxIndex));
+  const additionalTaxValues = additionalTaxIndexes.map(index => parseNumber(get(index))).filter(value => value !== null);
+  const additionalTaxAmount = additionalTaxValues.length ? additionalTaxValues.reduce((sum, value) => sum + value, 0) : null;
   return makeRow(get(descriptionIndex), {
     quantity, purchasePrice, salePrice, bonusQuantity, lineTotal,
     itemCode: get(itemCodeIndex), packing: get(packingIndex),
@@ -274,7 +279,7 @@ function parseDelimitedRow(line, header) {
     discountAmount: parseNumber(get(discountAmountIndex)),
     salesTaxPercent: /%|rate|percent/.test(salesTaxHeader) ? salesTaxValue : null,
     salesTaxAmount: /%|rate|percent/.test(salesTaxHeader) ? null : salesTaxValue,
-    additionalTaxAmount: parseNumber(get(additionalTaxIndex)),
+    additionalTaxAmount,
     netAmount: parseNumber(get(netIndex)),
     batchNumber: get(batchIndex), rawExpiry: expiryRaw, expiryDate,
     confidence: "medium", rawLine: line
