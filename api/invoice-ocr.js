@@ -490,7 +490,7 @@ function parseInvoiceText(raw) {
   let delimitedHeader = "";
   for (const line of lines) {
     const isLabelledLine = /(?:product|item|description)\s*[:=]/i.test(line) || /(?:qty|quantity)\s*[:=]/i.test(line);
-    if (!isLabelledLine && /\b(item|product|description|medicine)\b/i.test(line) && /\b(qty|quantity)\b/i.test(line)) {
+    if (!isLabelledLine && /\b(item|product|description|medicine|code)\b/i.test(line) && /\b(qty|quantity|stock)\b/i.test(line)) {
       headerContext = line;
       if (line.includes("|")) delimitedHeader = line;
       continue;
