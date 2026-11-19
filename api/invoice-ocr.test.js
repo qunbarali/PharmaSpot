@@ -1,7 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { normalizeText, normalizeDate, parseInvoiceText, extractInvoice } = require("./invoice-ocr");
+const { normalizeText, normalizeDate, parseInvoiceText, textItemsToLines, ocrWordsToLines, extractInvoice } = require("./invoice-ocr");
 
 describe("invoice OCR text parsing", () => {
   test("captures explicitly labeled packing, bonus, discount and tax values separately", () => {
@@ -18,6 +18,42 @@ describe("invoice OCR text parsing", () => {
     const foc = parseInvoiceText("Supplier\nProduct: Vitamin C; Qty: 6; Purchase: 4; FOC: 1; Batch: V-01; Expiry: 10/2028");
     expect(bonus.rows[0]).toMatchObject({ paidQuantity: 10, bonusQuantity: 2, freeQuantity: 2 });
     expect(foc.rows[0]).toMatchObject({ paidQuantity: 6, bonusQuantity: 1, freeQuantity: 1 });
+  });
+
+  test("maps table columns including paid quantity, FOC quantity, rate, MRP, batch and expiry", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-TABLE-100",
+      "Item | Qty | Bonus | Rate | MRP | Batch | Expiry",
+      "Paracetamol 500mg | 10 | 2 | 12.50 | 20 | B-01 | 12/2027"
+    ].join("\n"));
+    expect(result.rows[0]).toMatchObject({
+      productName: "Paracetamol 500mg",
+      quantity: 10, paidQuantity: 10, bonusQuantity: 2, freeQuantity: 2,
+      purchasePrice: 12.5, salePrice: 20, batchNumber: "B-01", expiryDate: "2027-12-31"
+    });
+  });
+
+  test("preserves PDF text-column gaps as table separators", () => {
+    const items = [
+      { str: "Item", transform: [10, 0, 0, 10, 10, 100], width: 18 },
+      { str: "Qty", transform: [10, 0, 0, 10, 150, 100], width: 15 },
+      { str: "Bonus", transform: [10, 0, 0, 10, 230, 100], width: 30 },
+      { str: "Paracetamol", transform: [10, 0, 0, 10, 10, 80], width: 60 },
+      { str: "500mg", transform: [10, 0, 0, 10, 75, 80], width: 30 },
+      { str: "10", transform: [10, 0, 0, 10, 150, 80], width: 12 },
+      { str: "2", transform: [10, 0, 0, 10, 230, 80], width: 8 }
+    ];
+    expect(textItemsToLines(items)).toBe("Item | Qty | Bonus\nParacetamol 500mg | 10 | 2");
+  });
+
+  test("reconstructs scanned OCR word columns from word bounding boxes", () => {
+    const words = [
+      ["Item", 10, 48, 10, 30], ["Qty", 200, 228, 10, 30], ["Bonus", 300, 350, 10, 30],
+      ["Paracetamol", 10, 145, 50, 70], ["500mg", 151, 190, 50, 70],
+      ["10", 200, 220, 50, 70], ["2", 300, 312, 50, 70]
+    ].map(([text, x0, x1, y0, y1]) => ({ text, bbox: { x0, x1, y0, y1 } }));
+    expect(ocrWordsToLines({ data: { text: "fallback", words } })).toBe("Item | Qty | Bonus\nParacetamol 500mg | 10 | 2");
   });
 
   test("normalizes OCR whitespace and bounds output", () => {
