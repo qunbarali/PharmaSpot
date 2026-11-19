@@ -40,6 +40,29 @@ function normalizeInvoiceKey(supplier, invoiceNo) {
   return supplierKey + "|" + invoiceKey;
 }
 
+function findDuplicateSourceFile(existingRecords, sourceFiles) {
+  const requestedHashes = new Set((Array.isArray(sourceFiles) ? sourceFiles : [])
+    .map(file => String(file && file.sha256 || "").trim().toLowerCase())
+    .filter(hash => /^[a-f0-9]{64}$/.test(hash)));
+  if (!requestedHashes.size) return null;
+
+  for (const record of (Array.isArray(existingRecords) ? existingRecords : [])) {
+    for (const source of (Array.isArray(record && record.sourceFiles) ? record.sourceFiles : [])) {
+      const hash = String(source && source.sha256 || "").trim().toLowerCase();
+      if (requestedHashes.has(hash)) {
+        return {
+          importId: String(record._id || ""),
+          status: String(record.status || ""),
+          supplier: String(record.supplier || ""),
+          invoiceNo: String(record.invoiceNo || ""),
+          sha256: hash
+        };
+      }
+    }
+  }
+  return null;
+}
+
 function isIsoDate(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
@@ -177,6 +200,7 @@ module.exports = {
   calculatePurchaseTotal,
   convertToBaseCurrency,
   normalizeInvoiceKey,
+  findDuplicateSourceFile,
   isIsoDate,
   normalizeExpiryDate,
   planPurchaseReversal,
