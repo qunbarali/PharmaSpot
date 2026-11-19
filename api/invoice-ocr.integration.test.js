@@ -109,6 +109,14 @@ describe("offline invoice OCR integration", () => {
     expect(result.text.toUpperCase()).toContain("INVOICE");
   });
 
+  test("recognizes text from a local JPEG invoice image", async () => {
+    const imagePath = path.join(directory, "invoice.jpeg");
+    fs.writeFileSync(imagePath, makeInvoiceImage());
+    const result = await extractInvoice(imagePath);
+    expect(result.reviewRequired).toBe(true);
+    expect(result.text.toUpperCase()).toContain("INVOICE");
+  });
+
   test("recognizes text from a local PNG invoice image", async () => {
     const imagePath = path.join(directory, "invoice.png");
     fs.writeFileSync(imagePath, makeInvoiceImage("image/png"));
