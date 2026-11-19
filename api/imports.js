@@ -10,7 +10,7 @@ const async = require("async");
 const { extractInvoice } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
 const { writeAudit, authorizeAdmin } = require("./audit");
-const { planPurchaseReversal, calculatePurchaseTotal, convertToBaseCurrency, normalizeInvoiceKey, normalizeExpiryDate, validatePurchaseDraft } = require("./purchase-utils");
+const { planPurchaseReversal, calculatePurchaseTotal, convertToBaseCurrency, normalizeInvoiceKey, findDuplicateSourceFile, normalizeExpiryDate, validatePurchaseDraft } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
 const appData = process.env.APPDATA;
@@ -368,9 +368,21 @@ app.post("/commit-purchase", async (req, res) => {
   }
   try {
     const existingPosted = await new Promise((resolve, reject) => importsDB.findOne({ importKey: draftKey }, (err, doc) => err ? reject(err) : resolve(doc)));
-    if (existingPosted) return res.status(409).json({ error: "This supplier invoice has already been posted." });
+    if (existingPosted) return res.status(409).json({ error: "This supplier invoice has already been posted.", importId: existingPosted._id });
     const existingDraft = await new Promise((resolve, reject) => importsDB.findOne({ draftKey }, (err, doc) => err ? reject(err) : resolve(doc)));
     if (existingDraft) return res.status(409).json({ error: "A draft for this supplier invoice already exists.", draftId: existingDraft._id, status: existingDraft.status });
+    if (sourceFiles.length) {
+      const recordsWithSources = await new Promise((resolve, reject) =>
+        importsDB.find({ sourceFiles: { $exists: true } }).sort({ createdAt: -1 }).exec((err, docs) => err ? reject(err) : resolve(docs || []))
+      );
+      const duplicateFile = findDuplicateSourceFile(recordsWithSources, sourceFiles);
+      if (duplicateFile) return res.status(409).json({
+        error: "One of these original invoice files has already been used in an import. Check purchase history before creating another draft.",
+        duplicateImportId: duplicateFile.importId,
+        duplicateStatus: duplicateFile.status,
+        duplicateInvoiceNo: duplicateFile.invoiceNo
+      });
+    }
   } catch (_) { return res.status(500).json({ error: "Could not check for duplicate supplier invoices." }); }
   importsDB.insert({
     type: "purchase_draft", status: "pending_approval", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
@@ -381,7 +393,8 @@ app.post("/commit-purchase", async (req, res) => {
     if (err) return res.status(500).json({ error: "Could not save purchase for approval." });
     writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, {
       supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate,
-      lineCount: items.length, sourceFileCount: sourceFiles.length
+      lineCount: items.length,
+      sourceFiles: sourceFiles.map(file => ({ originalName: file.originalName, size: file.size, sha256: file.sha256 }))
     })
       .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." }))
       .catch(() => res.status(500).json({ error: "Purchase draft saved but audit record failed. Contact an administrator before approval." }));
