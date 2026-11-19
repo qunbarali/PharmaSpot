@@ -3,6 +3,7 @@ const {
   calculatePurchaseTotal,
   convertToBaseCurrency,
   normalizeInvoiceKey,
+  findDuplicateSourceFile,
   isIsoDate,
   normalizeExpiryDate,
   planPurchaseReversal,
@@ -44,6 +45,19 @@ describe("purchase posting and reversal helpers", () => {
   test("normalizes supplier and invoice keys for duplicate detection", () => {
     expect(normalizeInvoiceKey("  Main   Distributor ", " INV-100 ")).toBe("main distributor|inv-100");
     expect(() => normalizeInvoiceKey("", "INV-100")).toThrow();
+  });
+
+  test("detects a reused original invoice file by SHA-256", () => {
+    const hash = "a".repeat(64);
+    const records = [{
+      _id: "import-1", status: "posted", supplier: "Main Distributor", invoiceNo: "INV-100",
+      sourceFiles: [{ originalName: "invoice.pdf", sha256: hash }]
+    }];
+    expect(findDuplicateSourceFile(records, [{ sha256: hash.toUpperCase() }])).toMatchObject({
+      importId: "import-1", status: "posted", invoiceNo: "INV-100", sha256: hash
+    });
+    expect(findDuplicateSourceFile(records, [{ sha256: "b".repeat(64) }])).toBeNull();
+    expect(findDuplicateSourceFile(records, [{ sha256: "not-a-hash" }])).toBeNull();
   });
 
   test("validates exchange-rate and invoice dates as real ISO calendar dates", () => {
