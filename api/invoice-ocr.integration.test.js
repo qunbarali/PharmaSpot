@@ -111,6 +111,23 @@ describe("offline invoice OCR integration", () => {
   beforeAll(() => { directory = fs.mkdtempSync(path.join(os.tmpdir(), "pharmaspot-ocr-")); });
   afterAll(() => { if (directory) fs.rmSync(directory, { recursive: true, force: true }); });
 
+  test("rejects oversized PNG and JPEG dimensions before decoding", async () => {
+    const pngPath = path.join(directory, "oversized.png");
+    const png = Buffer.alloc(24);
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png, 0);
+    png.writeUInt32BE(5000, 16);
+    png.writeUInt32BE(5000, 20);
+    fs.writeFileSync(pngPath, png);
+    await expect(extractInvoice(pngPath)).rejects.toThrow(/safe OCR rendering size/);
+
+    const jpegPath = path.join(directory, "oversized.jpg");
+    fs.writeFileSync(jpegPath, Buffer.from([
+      0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08,
+      0x13, 0x88, 0x13, 0x88, 0x03, 0x01, 0x11, 0x00
+    ]));
+    await expect(extractInvoice(jpegPath)).rejects.toThrow(/safe OCR rendering size/);
+  });
+
   test("recognizes text from a local invoice image", async () => {
     const imagePath = path.join(directory, "invoice.jpg");
     fs.writeFileSync(imagePath, makeInvoiceImage());
