@@ -319,7 +319,7 @@ function parseLooseRow(line, headerContext) {
   const numericValues = trailingNumbers[1].match(NUMBER_RE).map(parseNumber).filter(value => value !== null);
   if (numericValues.length < 2) return null;
   const description = cleaned.slice(0, trailingNumbers.index).replace(/^\s*(?:\d{1,3}[.)-]\s*)?/, "").trim();
-  const hasSaleColumn = /\b(?:sale\s*(?:price|rate)|retail\s*(?:price|rate)|mrp)\b/i.test(headerContext || "") && !/\b(?:sale|sales)\s*tax\b/i.test(headerContext || "");
+  const hasSaleColumn = /\b(?:sale|sales|retail|mrp)\b/i.test(headerContext || "") && !/\b(?:sale|sales)\s*tax\b/i.test(headerContext || "");
   const hasTotalColumn = /\b(amount|line\s*total|total)\b/i.test(headerContext || "");
   let salePrice = null;
   let lineTotal = null;
