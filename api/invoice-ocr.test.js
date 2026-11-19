@@ -34,6 +34,24 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("parses Pakistan distributor stock, BNS, packing and tax columns safely", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-PAK-002",
+      "Code | Description | Packing | Batch No | Exp Date | Stock | BNS | Rate | Gross | Disc % | Disc + Extra Amt | Sale Tax | Fur. Tax | AWH Tax | Net Amount",
+      "009 | Cetirizine 10mg | 10s | C-88 | 07/28 | 50 | 2 | 127.50 | 6375.00 | 0 | 0 | 31.88 | 0 | 0 | 6406.88"
+    ].join("\n"));
+    expect(result.rows[0]).toMatchObject({
+      itemCode: "009", productName: "Cetirizine 10mg", packing: "10s",
+      quantity: 50, paidQuantity: 50, bonusQuantity: 2,
+      purchasePrice: 127.5, salePrice: null,
+      batchNumber: "C-88", rawExpiry: "07/28", expiryDate: "2028-07-31",
+      grossAmount: 6375, discountPercent: 0, discountAmount: 0,
+      salesTaxAmount: 31.88, additionalTaxAmount: 0,
+      netAmount: 6406.88, lineTotal: 6406.88, needsReview: true
+    });
+  });
+
   test("preserves PDF text-column gaps as table separators", () => {
     const items = [
       { str: "Item", transform: [10, 0, 0, 10, 10, 100], width: 18 },
@@ -70,6 +88,7 @@ describe("invoice OCR text parsing", () => {
 
   test("normalizes month/year expiry dates to the final calendar day", () => {
     expect(normalizeDate("12/2027")).toBe("2027-12-31");
+    expect(normalizeDate("07/28")).toBe("2028-07-31");
     expect(normalizeDate("2027-12")).toBe("2027-12-31");
     expect(normalizeDate("Dec 2027")).toBe("2027-12-31");
     const result = parseInvoiceText("Supplier\nProduct: Amoxicillin 250mg; Qty: 5; Purchase: 8.25; Sale: 12; Batch: B-20; Expiry: 12/2027");
