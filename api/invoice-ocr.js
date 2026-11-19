@@ -612,8 +612,8 @@ function readWebpDimensions(buffer) {
       const b3 = buffer[dataOffset + 3];
       const b4 = buffer[dataOffset + 4];
       return {
-        width: 1 + ((b1 & 0x3f) | ((b2 & 0x0f) << 6)),
-        height: 1 + (((b2 & 0xf0) >> 4) | (b3 << 4) | ((b4 & 0x03) << 12))
+        width: 1 + (b1 | ((b2 & 0x3f) << 8)),
+        height: 1 + (((b2 & 0xc0) >> 6) | (b3 << 2) | ((b4 & 0x0f) << 10))
       };
     }
     if (chunkType === "VP8 " && chunkSize >= 10 &&
