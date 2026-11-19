@@ -156,11 +156,12 @@ function makeRow(description, values) {
   const explicit = extractExplicitRowFields(rawLine);
   const rawExpiry = String(explicit.rawExpiry || values.rawExpiry || "").trim();
   const expiryDate = String(values.expiryDate || "").trim();
+  const bonusQuantity = Number.isFinite(values.bonusQuantity) ? values.bonusQuantity : explicit.bonusQuantity;
   return {
     description: productName, productName,
     itemCode: explicit.itemCode, packing: explicit.packing,
     quantity: values.quantity, paidQuantity: values.quantity,
-    bonusQuantity: explicit.bonusQuantity, freeQuantity: explicit.bonusQuantity,
+    bonusQuantity, freeQuantity: bonusQuantity,
     purchasePrice: values.purchasePrice, rate: values.purchasePrice, unitPrice: values.purchasePrice,
     salePrice: Number.isFinite(values.salePrice) ? values.salePrice : null,
     grossAmount: explicit.grossAmount, discountPercent: explicit.discountPercent,
@@ -173,7 +174,7 @@ function makeRow(description, values) {
     fieldConfidence: {
       itemCode: explicit.itemCode ? "medium" : "none",
       packing: explicit.packing ? "medium" : "none",
-      bonusQuantity: explicit.bonusQuantity ? "medium" : "none",
+      bonusQuantity: bonusQuantity > 0 ? "medium" : "none",
       discount: explicit.discountPercent !== null || explicit.discountAmount !== null ? "medium" : "none",
       tax: explicit.salesTaxAmount !== null || explicit.salesTaxPercent !== null ? "medium" : "none"
     },
@@ -206,22 +207,37 @@ function parseDelimitedRow(line, header) {
   const values = line.split("|").map(value => value.trim());
   if (values.length < 3) return null;
   const indexFor = pattern => columns.findIndex(column => pattern.test(column));
-  const descriptionIndex = indexFor(/item|product|description|medicine/);
-  const quantityIndex = indexFor(/qty|quantity/);
-  const purchaseIndex = indexFor(/purchase|cost|unit\s*price|rate|price/);
+  let descriptionIndex = indexFor(/description|product\\s*name|medicine/);
+  if (descriptionIndex < 0) descriptionIndex = indexFor(/^item(?:\\s*name)?$/);
+  if (descriptionIndex < 0) descriptionIndex = indexFor(/product|item/);
+  let quantityIndex = indexFor(/^(?:paid\\s*)?(?:qty|quantity|units?)(?:\\s*(?:packs?|pcs?))?$/);
+  if (quantityIndex < 0) quantityIndex = columns.findIndex(column =>
+    /\\b(?:qty|quantity)\\b/.test(column) && !/(?:bonus|free|foc|scheme)/.test(column)
+  );
+  let purchaseIndex = columns.findIndex(column =>
+    /purchase|cost|unit\\s*price|rate|trade\\s*price|\\btp\\b/.test(column) && !/sale|retail|mrp/.test(column)
+  );
+  if (purchaseIndex < 0) purchaseIndex = columns.findIndex(column =>
+    /\\bprice\\b/.test(column) && !/sale|retail|mrp/.test(column)
+  );
   const saleIndex = indexFor(/sale|retail|mrp/);
-  const totalIndex = indexFor(/amount|line\s*total|total/);
+  const bonusIndex = indexFor(/bonus|free|foc|scheme/);
   const batchIndex = indexFor(/batch|lot/);
-  const expiryIndex = indexFor(/expiry|exp\b|use\s*by/);
+  const expiryIndex = indexFor(/expiry|\\bexp\\b|use\\s*by|best\\s*before/);
+  const netIndex = indexFor(/net/);
+  const totalIndex = netIndex >= 0 ? netIndex : columns.findIndex(column =>
+    /line\\s*total|\\bamount\\b|\\btotal\\b/.test(column) && !/gross|discount|tax/.test(column)
+  );
   const get = index => index >= 0 && index < values.length ? values[index] : "";
   const quantity = parseNumber(get(quantityIndex));
   const purchasePrice = parseNumber(get(purchaseIndex));
   const salePrice = parseNumber(get(saleIndex));
+  const bonusQuantity = parseNumber(get(bonusIndex));
   const lineTotal = parseNumber(get(totalIndex));
   const expiryRaw = get(expiryIndex);
   const expiryDate = normalizeDate(expiryRaw) || expiryRaw;
   return makeRow(get(descriptionIndex), {
-    quantity, purchasePrice, salePrice, lineTotal,
+    quantity, purchasePrice, salePrice, bonusQuantity, lineTotal,
     batchNumber: get(batchIndex), expiryDate,
     confidence: "medium", rawLine: line
   });
@@ -283,22 +299,122 @@ function parseLooseRow(line, headerContext) {
 }
 
 function textItemsToLines(items) {
-  const lines = [];
-  let current = [];
-  let currentY = null;
-  for (const item of items || []) {
+  const source = (items || []).map((item, index) => {
     const value = String(item && item.str || "").trim();
-    if (!value) continue;
-    const y = item && Array.isArray(item.transform) ? Number(item.transform[5]) : null;
-    if (current.length && Number.isFinite(y) && Number.isFinite(currentY) && Math.abs(y - currentY) > 2.5) {
-      lines.push(current.join(" ").trim());
-      current = [];
+    const transform = item && Array.isArray(item.transform) ? item.transform : [];
+    return {
+      value, index,
+      x: Number(transform[4]),
+      y: Number(transform[5]),
+      width: Number(item && item.width),
+      height: Math.abs(Number(transform[3]) || 10),
+      rotated: Math.abs(Number(transform[1]) || 0) > 0.75 || Math.abs(Number(transform[2]) || 0) > 0.75
+    };
+  }).filter(item => item.value);
+  if (!source.length) return "";
+
+  const hasGeometry = source.every(item => Number.isFinite(item.x) && Number.isFinite(item.y) && Number.isFinite(item.width));
+  const hasRotation = source.some(item => item.rotated);
+  if (!hasGeometry || hasRotation) {
+    const lines = [];
+    let current = [];
+    let currentY = null;
+    for (const item of items || []) {
+      const value = String(item && item.str || "").trim();
+      if (!value) continue;
+      const y = item && Array.isArray(item.transform) ? Number(item.transform[5]) : null;
+      if (current.length && Number.isFinite(y) && Number.isFinite(currentY) && Math.abs(y - currentY) > 2.5) {
+        lines.push(current.join(" ").trim());
+        current = [];
+      }
+      if (!current.length) currentY = y;
+      current.push(value);
     }
-    if (!current.length) currentY = y;
-    current.push(value);
+    if (current.length) lines.push(current.join(" ").trim());
+    return lines.join("\n");
   }
-  if (current.length) lines.push(current.join(" ").trim());
-  return lines.join("\n");
+
+  source.sort((a, b) => b.y - a.y || a.x - b.x || a.index - b.index);
+  const groups = [];
+  for (const item of source) {
+    const current = groups[groups.length - 1];
+    const tolerance = current ? Math.max(2.5, Math.min(current.height, item.height) * 0.25) : 2.5;
+    if (!current || Math.abs(item.y - current.y) > tolerance) {
+      groups.push({ y: item.y, height: item.height, items: [item] });
+    } else {
+      current.items.push(item);
+      current.height = Math.max(current.height, item.height);
+    }
+  }
+  return groups.map(group => {
+    group.items.sort((a, b) => a.x - b.x || a.index - b.index);
+    let line = "";
+    let previousEnd = null;
+    let previousHeight = group.height;
+    for (const item of group.items) {
+      if (previousEnd !== null) {
+        const gap = item.x - previousEnd;
+        const separatorThreshold = Math.max(14, Math.max(previousHeight, item.height) * 1.35);
+        line += gap > separatorThreshold ? " | " : " ";
+      }
+      line += item.value;
+      previousEnd = item.x + item.width;
+      previousHeight = item.height;
+    }
+    return line.trim();
+  }).join("\n");
+}
+
+function ocrWordsToLines(result) {
+  const data = result && result.data ? result.data : {};
+  const words = (Array.isArray(data.words) ? data.words : []).map((word, index) => {
+    const box = word && word.bbox ? word.bbox : {};
+    return {
+      text: String(word && word.text || "").trim(),
+      x0: Number(box.x0), x1: Number(box.x1),
+      y0: Number(box.y0), y1: Number(box.y1), index
+    };
+  }).filter(word => word.text && [word.x0, word.x1, word.y0, word.y1].every(Number.isFinite));
+  if (!words.length) return normalizeText(data.text);
+
+  words.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0 || a.index - b.index);
+  const groups = [];
+  for (const word of words) {
+    const center = (word.y0 + word.y1) / 2;
+    const height = Math.max(1, word.y1 - word.y0);
+    let group = null;
+    for (let i = groups.length - 1; i >= 0; i -= 1) {
+      const candidate = groups[i];
+      if (center - candidate.center > Math.max(8, height * 0.8)) break;
+      if (Math.abs(center - candidate.center) <= Math.max(5, Math.min(height, candidate.height) * 0.45)) {
+        group = candidate;
+        break;
+      }
+    }
+    if (!group) {
+      group = { center, height, words: [] };
+      groups.push(group);
+    }
+    group.words.push(word);
+    group.center = group.words.reduce((sum, entry) => sum + (entry.y0 + entry.y1) / 2, 0) / group.words.length;
+    group.height = Math.max(group.height, height);
+  }
+
+  return groups.map(group => {
+    group.words.sort((a, b) => a.x0 - b.x0 || a.index - b.index);
+    let line = "";
+    let previousEnd = null;
+    const threshold = Math.max(18, group.height * 1.5);
+    for (const word of group.words) {
+      if (previousEnd !== null) {
+        const gap = word.x0 - previousEnd;
+        line += gap > threshold ? " | " : " ";
+      }
+      line += word.text;
+      previousEnd = word.x1;
+    }
+    return line.trim();
+  }).join("\n");
 }
 
 function parseInvoiceText(raw) {
@@ -388,7 +504,7 @@ async function recognizeImageBuffer(buffer, maxPixels) {
   const worker = await createOcrWorker();
   try {
     const result = await worker.recognize(canvas.toBuffer("image/png"));
-    return normalizeText(result && result.data && result.data.text);
+    return ocrWordsToLines(result);
   } finally {
     canvas.width = 0;
     canvas.height = 0;
@@ -439,7 +555,7 @@ async function extractPdf(filePath) {
           try {
             await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
             const result = await worker.recognize(canvas.toBuffer("image/png"));
-            pageText = normalizeText(result && result.data && result.data.text);
+            pageText = ocrWordsToLines(result);
           } finally {
             canvas.width = 0;
             canvas.height = 0;
@@ -478,4 +594,4 @@ async function extractInvoice(filePath) {
   return parseInvoiceText(text);
 }
 
-module.exports = { normalizeText, normalizeDate, parseInvoiceText, extractInvoice };
+module.exports = { normalizeText, normalizeDate, parseInvoiceText, textItemsToLines, ocrWordsToLines, extractInvoice };
