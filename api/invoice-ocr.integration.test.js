@@ -142,6 +142,38 @@ describe("offline invoice OCR integration", () => {
     await expect(extractInvoice(imagePath)).rejects.toThrow(/safe OCR rendering size/);
   });
 
+  test("preflights VP8L and VP8 WEBP dimensions before decoding", async () => {
+    const losslessPath = path.join(directory, "oversized-lossless.webp");
+    const lossless = Buffer.alloc(25);
+    lossless.write("RIFF", 0, "ascii");
+    lossless.writeUInt32LE(17, 4);
+    lossless.write("WEBP", 8, "ascii");
+    lossless.write("VP8L", 12, "ascii");
+    lossless.writeUInt32LE(5, 16);
+    lossless[20] = 0x2f;
+    lossless[21] = 0x87;
+    lossless[22] = 0xd3;
+    lossless[23] = 0xe1;
+    lossless[24] = 0x04;
+    fs.writeFileSync(losslessPath, lossless);
+    await expect(extractInvoice(losslessPath)).rejects.toThrow(/safe OCR rendering size/);
+
+    const lossyPath = path.join(directory, "oversized-lossy.webp");
+    const lossy = Buffer.alloc(30);
+    lossy.write("RIFF", 0, "ascii");
+    lossy.writeUInt32LE(22, 4);
+    lossy.write("WEBP", 8, "ascii");
+    lossy.write("VP8 ", 12, "ascii");
+    lossy.writeUInt32LE(10, 16);
+    lossy[23] = 0x9d;
+    lossy[24] = 0x01;
+    lossy[25] = 0x2a;
+    lossy.writeUInt16LE(5000, 26);
+    lossy.writeUInt16LE(5000, 28);
+    fs.writeFileSync(lossyPath, lossy);
+    await expect(extractInvoice(lossyPath)).rejects.toThrow(/safe OCR rendering size/);
+  });
+
   test("rejects WEBP files without a readable image dimension chunk", async () => {
     const imagePath = path.join(directory, "malformed.webp");
     const webp = Buffer.alloc(20);
