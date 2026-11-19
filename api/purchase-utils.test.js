@@ -70,6 +70,7 @@ describe("purchase posting and reversal helpers", () => {
     expect(normalizeExpiryDate("2027-12-31")).toBe("2027-12-31");
     expect(normalizeExpiryDate("31-Dec-2027")).toBe("2027-12-31");
     expect(normalizeExpiryDate("12/2027")).toBe("2027-12-31");
+    expect(normalizeExpiryDate("07/28")).toBe("2028-07-31");
     expect(normalizeExpiryDate("2027-12")).toBe("2027-12-31");
     expect(normalizeExpiryDate("Dec 2027")).toBe("2027-12-31");
     expect(normalizeExpiryDate("31/02/2027")).toBe("");
