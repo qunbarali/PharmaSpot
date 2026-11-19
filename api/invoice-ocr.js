@@ -136,7 +136,7 @@ function extractExplicitRowFields(rawLine) {
   const line = String(rawLine || "");
   const itemCode = getExplicitRowValue(line, [/(?:item\s*code|product\s*code|sku)\s*[:#=]\s*([A-Z0-9/-]+)/i]);
   const packing = getExplicitRowValue(line, [/(?:pack(?:ing)?|pack\s*size)\s*[:=]\s*([^;|]+)/i]);
-  const bonusQuantity = getExplicitRowNumber(line, [/(?:bonus|free|foc|scheme\s*qty|free\s*qty)\s*[:=]\s*([\d,.]+)/i]);
+  const bonusQuantity = getExplicitRowNumber(line, [/(?:bonus(?:\s*qty)?|free(?:\s*qty)?|foc(?:\s*qty)?|scheme\s*qty)\s*[:=]\s*([\d,.]+)/i]);
   const discountPercent = getExplicitRowNumber(line, [/(?:discount|disc)\s*(?:%|percent|percentage)?\s*[:=]\s*([\d,.]+)\s*%?/i]);
   const discountAmount = getExplicitRowNumber(line, [/(?:discount|disc)\s*(?:amount|amt)\s*[:=]\s*([\d,.]+)/i]);
   const grossAmount = getExplicitRowNumber(line, [/(?:gross(?:\s*amount)?|gross\s*total)\s*[:=]\s*([\d,.]+)/i]);
