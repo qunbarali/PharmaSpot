@@ -51,7 +51,7 @@ describe("invoice OCR text parsing", () => {
     const words = [
       ["Item", 10, 48, 10, 30], ["Qty", 200, 228, 10, 30], ["Bonus", 300, 350, 10, 30],
       ["Paracetamol", 10, 145, 50, 70], ["500mg", 151, 190, 50, 70],
-      ["10", 200, 220, 50, 70], ["2", 300, 312, 50, 70]
+      ["10", 250, 270, 50, 70], ["2", 350, 362, 50, 70]
     ].map(([text, x0, x1, y0, y1]) => ({ text, bbox: { x0, x1, y0, y1 } }));
     expect(ocrWordsToLines({ data: { text: "fallback", words } })).toBe("Item | Qty | Bonus\nParacetamol 500mg | 10 | 2");
   });
