@@ -13,6 +13,7 @@ let importsAPI;
 let supplierLedger;
 let audit;
 let adminToken;
+let importRoot;
 const productId = 918273645;
 
 function insert(db, document) {
@@ -54,6 +55,7 @@ beforeAll(async () => {
   process.env.APPDATA = appDataRoot;
   process.env.APPNAME = "workflow-test";
   const appRoot = path.join(appDataRoot, process.env.APPNAME);
+  importRoot = path.join(appRoot, "uploads", "imports");
   fs.mkdirSync(path.join(appRoot, "server", "databases"), { recursive: true });
   fs.mkdirSync(path.join(appRoot, "uploads"), { recursive: true });
 
@@ -134,11 +136,21 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     }]
   });
 
-  const firstDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-001"));
+  const sourceFileName = "11111111-1111-4111-8111-111111111111.pdf";
+  fs.writeFileSync(path.join(importRoot, sourceFileName), Buffer.from("%PDF-1.4\\nsource invoice fixture\\n"));
+  const sourceFiles = [{ originalName: "supplier-invoice.pdf", storedName: sourceFileName }];
+  const firstDraft = await request("POST", "/imports/commit-purchase", {
+    ...makePurchase("INV-001"), sourceFiles
+  });
   expect(firstDraft.status).toBe(201);
   expect(firstDraft.data.status).toBe("pending_approval");
   const duplicatePendingDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-001"));
   expect(duplicatePendingDraft.status).toBe(409);
+  const duplicateSourceFile = await request("POST", "/imports/commit-purchase", {
+    ...makePurchase("INV-SAME-FILE"), sourceFiles
+  });
+  expect(duplicateSourceFile.status).toBe(409);
+  expect(duplicateSourceFile.data.error).toMatch(/original invoice files has already been used/i);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
 
   const pending = await request("GET", "/imports/pending-purchases");
