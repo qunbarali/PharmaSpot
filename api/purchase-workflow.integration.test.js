@@ -137,6 +137,11 @@ afterAll(async () => {
 });
 
 test("purchase approval, controlled reversal, supplier payment, reconciliation and audit work end to end", async () => {
+  expect(importsAPI.isSafeArchiveEntryPath("supplier/invoice-page-1.jpg")).toBe(true);
+  expect(importsAPI.isSafeArchiveEntryPath("../../outside.jpg")).toBe(false);
+  expect(importsAPI.isSafeArchiveEntryPath("C:\\Windows\\outside.jpg")).toBe(false);
+  expect(importsAPI.isSafeArchiveEntryPath("\\\\server\\share\\outside.jpg")).toBe(false);
+  expect(importsAPI.isSafeArchiveEntryPath("/etc/passwd")).toBe(false);
   expect((await request("POST", "/imports/upload", {}, null)).status).toBe(401);
   expect((await request("POST", "/imports/ocr/not-a-file.pdf", undefined, null)).status).toBe(401);
   expect((await request("POST", "/imports/assign-image", { productId, storedName: "not-a-file.jpg" }, null)).status).toBe(401);
