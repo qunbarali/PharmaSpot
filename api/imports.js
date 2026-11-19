@@ -7,9 +7,9 @@ const path = require("path");
 const crypto = require("crypto");
 const { Transform } = require("stream");
 const async = require("async");
-const { extractInvoice } = require("./invoice-ocr");
+const { extractInvoice, validateInvoiceFile } = require("./invoice-ocr");
 const supplierLedger = require("./supplier-ledger");
-const { writeAudit, authorizeAdmin } = require("./audit");
+const { writeAudit, authorizeAdmin, authenticateUser } = require("./audit");
 const { planPurchaseReversal, calculatePurchaseTotal, convertToBaseCurrency, normalizeInvoiceKey, findDuplicateSourceFile, normalizeExpiryDate, validatePurchaseDraft } = require("./purchase-utils");
 
 const appName = process.env.APPNAME;
@@ -45,6 +45,39 @@ const upload = multer({
 const cleanName = (value) => String(value || "").toLowerCase().replace(/\.[^.]+$/, "").replace(/[^a-z0-9]+/g, "");
 const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
+async function requireSignedInUser(req, res) {
+  try {
+    const user = await authenticateUser(req);
+    if (!user) {
+      res.status(401).json({ error: "A valid signed-in PharmaSpot session is required to import or inspect documents." });
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Could not verify document import session:", error);
+    res.status(500).json({ error: "Could not verify the signed-in session." });
+    return false;
+  }
+}
+
+function validateZipFile(filePath) {
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile() || stat.size < 4 || stat.size > 20 * 1024 * 1024) {
+    throw new Error("ZIP archive must be a regular file between 4 bytes and 20 MB.");
+  }
+  const header = Buffer.alloc(4);
+  const fd = fs.openSync(filePath, "r");
+  let bytesRead;
+  try { bytesRead = fs.readSync(fd, header, 0, header.length, 0); } finally { fs.closeSync(fd); }
+  const signature = header.subarray(0, bytesRead);
+  const valid = [
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.from([0x50, 0x4b, 0x05, 0x06]),
+    Buffer.from([0x50, 0x4b, 0x07, 0x08])
+  ].some(prefix => signature.equals(prefix));
+  if (!valid) throw new Error("The uploaded ZIP archive has an invalid file signature.");
+}
+
 function normalizeSourceFiles(files) {
   return (Array.isArray(files) ? files : []).slice(0, 20).map(file => {
     const storedName = String(file && file.storedName || "");
@@ -74,7 +107,8 @@ app.use((req, res, next) => {
 
 app.get("/", (_req, res) => res.json({ module: "document-import", supported: Array.from(allowed) }));
 
-app.post("/upload", (req, res) => {
+app.post("/upload", async (req, res) => {
+  if (!await requireSignedInUser(req, res)) return;
   upload.array("files", 20)(req, res, async (error) => {
     if (error) {
       for (const file of (req.files || [])) if (file && file.path) fs.unlink(file.path, () => {});
@@ -85,12 +119,15 @@ app.post("/upload", (req, res) => {
       const files = [];
       for (const file of (req.files || [])) {
         stagedPaths.push(file.path);
+        const extension = path.extname(file.originalname).toLowerCase();
+        if (extension === ".zip") validateZipFile(file.path);
+        else validateInvoiceFile(file.path, extension);
         const digest = crypto.createHash("sha256").update(fs.readFileSync(file.path)).digest("hex");
         const record = {
           id: path.basename(file.filename, path.extname(file.filename)),
           originalName: path.basename(file.originalname),
           storedName: file.filename,
-          type: path.extname(file.originalname).toLowerCase(),
+          type: extension,
           size: file.size,
           sha256: digest,
           path: file.path,
@@ -170,6 +207,7 @@ app.post("/upload", (req, res) => {
 });
 
 app.post("/ocr/:storedName", async (req, res) => {
+  if (!await requireSignedInUser(req, res)) return;
   const storedName = path.basename(String(req.params.storedName || ""));
   if (!storedName || storedName !== req.params.storedName || !/^[a-f0-9-]+\.(pdf|jpg|jpeg|png|webp)$/i.test(storedName)) {
     return res.status(400).json({ error: "Invalid staged invoice file." });
@@ -183,7 +221,8 @@ app.post("/ocr/:storedName", async (req, res) => {
     res.status(503).json({ error: error.message || "Invoice OCR could not be completed." });
   }
 });
-app.post("/assign-image", (req, res) => {
+app.post("/assign-image", async (req, res) => {
+  if (!await requireSignedInUser(req, res)) return;
   const productId = Number(req.body.productId);
   const storedName = path.basename(String(req.body.storedName || ""));
   if (!Number.isSafeInteger(productId) || !storedName || storedName !== req.body.storedName) {
