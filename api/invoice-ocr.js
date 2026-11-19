@@ -8,7 +8,7 @@ const MAX_PDF_PAGES = 30;
 const MAX_RENDER_PIXELS = 12000000;
 const optionalRequire = name => { try { return require(name); } catch (_) { return null; } };
 
-const DATE_SOURCE = "(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}|\\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\\d{1,2},?\s+\\d{2,4}|\\d{1,2}[./-]\\d{4}|\\d{4}[./-]\\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\\d{4})";
+const DATE_SOURCE = "(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}|\\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}|\\d{1,2}[./-]\\d{4}|\\d{4}[./-]\\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{4})";
 const NUMBER_SOURCE = "(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d{1,4})?";
 const NUMBER_RE = new RegExp(NUMBER_SOURCE, "g");
 const CURRENCY_CODES = new Set(["PKR", "INR", "USD"]);
@@ -252,7 +252,7 @@ function parseLooseRow(line, headerContext) {
   cleaned = cleaned.replace(/\b(?:batch|lot)\s*(?:no|number|#)?\s*[:#-]?\s*[A-Z0-9][A-Z0-9/-]*/i, " ");
 
   const dates = extractDateTokens(cleaned);
-  const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry)?|use\s*by|best\s*before)\s*[:#-]?\s*(" + DATE_SOURCE + ")", "i"));
+  const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry)?|use\\s*by|best\\s*before)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i"));
   let expiryDate = "";
   if (expiryLabel) expiryDate = normalizeDate(expiryLabel[1]) || expiryLabel[1];
   else if (dates.length) expiryDate = dates[dates.length - 1].iso || dates[dates.length - 1].value;
@@ -269,7 +269,7 @@ function parseLooseRow(line, headerContext) {
     }
   }
 
-  const trailingNumbers = cleaned.match(new RegExp("(" + NUMBER_SOURCE + "(?:\s+" + NUMBER_SOURCE + "){1,3})\s*$"));
+  const trailingNumbers = cleaned.match(new RegExp("(" + NUMBER_SOURCE + "(?:\\s+" + NUMBER_SOURCE + "){1,3})\\s*$"));
   if (!trailingNumbers) return null;
   const numericValues = trailingNumbers[1].match(NUMBER_RE).map(parseNumber).filter(value => value !== null);
   if (numericValues.length < 2) return null;
@@ -430,7 +430,7 @@ function parseInvoiceText(raw) {
     /(?:invoice|bill)\s*[:#]\s*([A-Z0-9][A-Z0-9/-]{2,})/i
   ]);
   const invoiceDateRaw = getLabeledValue(text, [
-    new RegExp("(?:invoice\s*date|bill\s*date|date)\s*[:#-]?\s*(" + DATE_SOURCE + ")", "i")
+    new RegExp("(?:invoice\\s*date|bill\\s*date|date)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
   ]);
   const invoiceDate = normalizeDate(invoiceDateRaw) || invoiceDateRaw;
   let currency = "";
