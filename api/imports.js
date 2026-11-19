@@ -146,7 +146,7 @@ app.post("/upload", async (req, res) => {
             if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes + declaredSize > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
             const normalizedEntry = String(entry.path || "").replace(/\\/g, "/");
             const safeEntryPath = path.posix.normalize(normalizedEntry);
-            if (!normalizedEntry || normalizedEntry.startsWith("/") || safeEntryPath === ".." || safeEntryPath.startsWith("../")) throw new Error("ZIP archive contains an unsafe file path.");
+            if (!normalizedEntry || normalizedEntry.startsWith("/") || path.win32.isAbsolute(normalizedEntry) || /^[a-zA-Z]:/.test(normalizedEntry) || safeEntryPath === ".." || safeEntryPath.startsWith("../")) throw new Error("ZIP archive contains an unsafe file path.");
             const base = path.posix.basename(safeEntryPath);
             if (!base || base.startsWith(".")) continue;
             const targetName = crypto.randomUUID() + ext;
