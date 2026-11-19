@@ -137,6 +137,22 @@ describe("purchase posting and reversal helpers", () => {
     expect(draft.items[0].bonusQuantity).toBe(2);
   });
 
+  test("does not allow paid quantity to diverge from stock quantity", () => {
+    const valid = {
+      supplier: "Main Distributor", invoiceNo: "INV-PAID", currency: "PKR",
+      baseCurrency: "PKR", exchangeRate: 1, exchangeRateDate: "2026-11-16",
+      items: [{ productId: 5, quantity: 10, purchasePrice: 12, salePrice: 15,
+        batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
+    };
+    expect(validatePurchaseDraft(valid).items[0]).toMatchObject({ quantity: 10, paidQuantity: 10 });
+    expect(() => validatePurchaseDraft({
+      ...valid, items: [{ ...valid.items[0], paidQuantity: 2 }]
+    })).toThrow(/paid quantity must match/i);
+    expect(() => validatePurchaseDraft({
+      ...valid, items: [{ ...valid.items[0], quantity: "invalid", paidQuantity: 10 }]
+    })).toThrow(/positive paid quantity/i);
+  });
+
   test("rejects duplicate/invalid purchase fields, dates and exchange rates", () => {
     const valid = {
       supplier: "Main Distributor", invoiceNo: "INV-100", currency: "PKR",
