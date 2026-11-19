@@ -166,6 +166,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   let firstImport = history.data.find(record => record.invoiceNo === "INV-001" && record.status === "posted");
   expect(firstImport).toBeDefined();
   expect(firstImport).toMatchObject({ supplierIdentifier: "SUP-007", invoiceDate: "2026-11-15", exchangeRateDate: "2026-11-16", currency: "PKR", baseCurrency: "PKR", exchangeRate: 1 });
+  expect(firstImport.sourceFiles[0]).toMatchObject({ originalName: "supplier-invoice.pdf", type: ".pdf" });
+  expect(firstImport.sourceFiles[0].sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(firstImport.items[0]).toMatchObject({ quantity: 7, paidQuantity: 5, bonusQuantity: 2 });
   expect((await findOne(inventoryDB, { _id: productId })).batches.find(batch => batch.importLineId === firstImport.items[0].importLineId).quantity).toBe(7);
   expect(await supplierLedger.getLedgerEvent("purchase:" + firstImport._id)).toMatchObject({ amount: 20 });
@@ -270,6 +272,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
 
   const auditResponse = await request("GET", "/supplier-ledger/audit");
   expect(auditResponse.status).toBe(200);
+  const draftAudit = auditResponse.data.find(event => event.action === "purchase_draft_created" && event.entityId === firstDraft.data.draftId);
+  expect(draftAudit.details.sourceFiles[0].sha256).toMatch(/^[a-f0-9]{64}$/);
   const actions = auditResponse.data.map(event => event.action);
   expect(actions).toEqual(expect.arrayContaining([
     "purchase_draft_created",
