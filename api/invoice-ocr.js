@@ -286,9 +286,6 @@ function parseDelimitedRow(line, header) {
   });
 }
 
-function parseLooseRow  });
-}
-
 function parseLooseRow(line, headerContext) {
   if (!line || line.length < 5 || /\b(subtotal|grand\s*total|amount\s*due|total\s+tax|discount|taxable\s+value|invoice\s+total|balance\s+due)\b/i.test(line)) return null;
   if (/\b(?:invoice|bill)\s*(?:no|number|date)\b/i.test(line) || /\b(?:supplier|vendor|distributor|ntn|gstin|tax\s*id)\s*[:#]/i.test(line)) return null;
