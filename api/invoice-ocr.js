@@ -8,7 +8,7 @@ const MAX_PDF_PAGES = 30;
 const MAX_RENDER_PIXELS = 12000000;
 const optionalRequire = name => { try { return require(name); } catch (_) { return null; } };
 
-const DATE_SOURCE = "(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}|\\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}|\\d{1,2}[./-]\\d{4}|\\d{4}[./-]\\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{4})";
+const DATE_SOURCE = "(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}|\\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}|\\d{1,2}[./-]\\d{4}|\\d{4}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{4})";
 const NUMBER_SOURCE = "(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d{1,4})?";
 const NUMBER_RE = new RegExp(NUMBER_SOURCE, "g");
 const CURRENCY_CODES = new Set(["PKR", "INR", "USD"]);
@@ -57,6 +57,14 @@ function normalizeDate(value) {
   if (match) {
     const month = Number(match[1]);
     const year = Number(match[2]);
+    const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return toIsoDate(year, month, day);
+  }
+  match = raw.match(/^(\d{1,2})[./-](\d{2})$/);
+  if (match) {
+    let year = Number(match[2]);
+    year += year >= 70 ? 1900 : 2000;
+    const month = Number(match[1]);
     const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
     return toIsoDate(year, month, day);
   }
@@ -136,7 +144,7 @@ function extractExplicitRowFields(rawLine) {
   const line = String(rawLine || "");
   const itemCode = getExplicitRowValue(line, [/(?:item\s*code|product\s*code|sku)\s*[:#=]\s*([A-Z0-9/-]+)/i]);
   const packing = getExplicitRowValue(line, [/(?:pack(?:ing)?|pack\s*size)\s*[:=]\s*([^;|]+)/i]);
-  const bonusQuantity = getExplicitRowNumber(line, [/(?:bonus(?:\s*qty)?|free(?:\s*qty)?|foc(?:\s*qty)?|scheme\s*qty)\s*[:=]\s*([\d,.]+)/i]);
+  const bonusQuantity = getExplicitRowNumber(line, [/(?:bonus(?:\s*qty)?|free(?:\s*qty)?|foc(?:\s*qty)?|scheme\s*qty|bns)\s*[:=]\s*([\d,.]+)/i]);
   const discountPercent = getExplicitRowNumber(line, [/(?:discount|disc)\s*(?:%|percent|percentage)?\s*[:=]\s*([\d,.]+)\s*%?/i]);
   const discountAmount = getExplicitRowNumber(line, [/(?:discount|disc)\s*(?:amount|amt)\s*[:=]\s*([\d,.]+)/i]);
   const grossAmount = getExplicitRowNumber(line, [/(?:gross(?:\s*amount)?|gross\s*total)\s*[:=]\s*([\d,.]+)/i]);
@@ -144,7 +152,7 @@ function extractExplicitRowFields(rawLine) {
   const salesTaxAmount = getExplicitRowNumber(line, [/(?:sales\s*tax|gst|tax)\s*(?:amount|amt)\s*[:=]\s*([\d,.]+)/i]);
   const additionalTaxAmount = getExplicitRowNumber(line, [/(?:additional\s*tax|advance\s*tax|withholding\s*tax|further\s*tax)\s*(?:amount|amt)?\s*[:=]\s*([\d,.]+)/i]);
   const netAmount = getExplicitRowNumber(line, [/(?:net\s*(?:amount|total)|line\s*total|amount)\s*[:=]\s*([\d,.]+)/i]);
-  const rawExpiry = getExplicitRowValue(line, [/(?:exp(?:iry)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
+  const rawExpiry = getExplicitRowValue(line, [/(?:exp(?:iry)?(?:\s*date)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
   return { itemCode, packing, bonusQuantity: bonusQuantity ?? 0, discountPercent, discountAmount, grossAmount, salesTaxPercent, salesTaxAmount, additionalTaxAmount, netAmount, rawExpiry };
 }
 
@@ -155,28 +163,35 @@ function makeRow(description, values) {
   const rawLine = String(values.rawLine || "").slice(0, 300);
   const explicit = extractExplicitRowFields(rawLine);
   const rawExpiry = String(explicit.rawExpiry || values.rawExpiry || "").trim();
-  const expiryDate = String(values.expiryDate || "").trim();
+  const expiryDate = String(values.expiryDate || normalizeDate(rawExpiry) || "").trim();
   const bonusQuantity = Number.isFinite(values.bonusQuantity) ? values.bonusQuantity : explicit.bonusQuantity;
+  const itemCode = String(explicit.itemCode || values.itemCode || "").trim();
+  const packing = String(explicit.packing || values.packing || "").trim();
+  const grossAmount = explicit.grossAmount ?? values.grossAmount ?? null;
+  const discountPercent = explicit.discountPercent ?? values.discountPercent ?? null;
+  const discountAmount = explicit.discountAmount ?? values.discountAmount ?? null;
+  const salesTaxPercent = explicit.salesTaxPercent ?? values.salesTaxPercent ?? null;
+  const salesTaxAmount = explicit.salesTaxAmount ?? values.salesTaxAmount ?? null;
+  const additionalTaxAmount = explicit.additionalTaxAmount ?? values.additionalTaxAmount ?? null;
+  const netAmount = explicit.netAmount ?? values.netAmount ?? null;
   return {
     description: productName, productName,
-    itemCode: explicit.itemCode, packing: explicit.packing,
+    itemCode, packing,
     quantity: values.quantity, paidQuantity: values.quantity,
     bonusQuantity, freeQuantity: bonusQuantity,
     purchasePrice: values.purchasePrice, rate: values.purchasePrice, unitPrice: values.purchasePrice,
     salePrice: Number.isFinite(values.salePrice) ? values.salePrice : null,
-    grossAmount: explicit.grossAmount, discountPercent: explicit.discountPercent,
-    discountAmount: explicit.discountAmount, salesTaxPercent: explicit.salesTaxPercent,
-    salesTaxAmount: explicit.salesTaxAmount, additionalTaxAmount: explicit.additionalTaxAmount,
-    netAmount: explicit.netAmount,
-    lineTotal: Number.isFinite(values.lineTotal) ? values.lineTotal : (explicit.netAmount ?? null),
+    grossAmount, discountPercent, discountAmount, salesTaxPercent,
+    salesTaxAmount, additionalTaxAmount, netAmount,
+    lineTotal: Number.isFinite(values.lineTotal) ? values.lineTotal : (netAmount ?? null),
     batchNumber: String(values.batchNumber || "").trim().slice(0, 80),
     rawExpiry, expiryDate,
     fieldConfidence: {
-      itemCode: explicit.itemCode ? "medium" : "none",
-      packing: explicit.packing ? "medium" : "none",
+      itemCode: itemCode ? "medium" : "none",
+      packing: packing ? "medium" : "none",
       bonusQuantity: bonusQuantity > 0 ? "medium" : "none",
-      discount: explicit.discountPercent !== null || explicit.discountAmount !== null ? "medium" : "none",
-      tax: explicit.salesTaxAmount !== null || explicit.salesTaxPercent !== null ? "medium" : "none"
+      discount: discountPercent !== null || discountAmount !== null ? "medium" : "none",
+      tax: salesTaxAmount !== null || salesTaxPercent !== null || additionalTaxAmount !== null ? "medium" : "none"
     },
     warnings: ["Confirm all extracted values against the original invoice before posting."],
     confidence: values.confidence || "low", needsReview: true, rawLine
@@ -210,9 +225,9 @@ function parseDelimitedRow(line, header) {
   let descriptionIndex = indexFor(/description|product\s*name|medicine/);
   if (descriptionIndex < 0) descriptionIndex = indexFor(/^item(?:\s*name)?$/);
   if (descriptionIndex < 0) descriptionIndex = indexFor(/product|item/);
-  let quantityIndex = indexFor(/^(?:paid\s*)?(?:qty|quantity|units?)(?:\s*(?:packs?|pcs?))?$/);
+  let quantityIndex = indexFor(/^(?:paid\s*)?(?:qty|quantity|units?|stock)(?:\s*(?:packs?|pcs?))?$/);
   if (quantityIndex < 0) quantityIndex = columns.findIndex(column =>
-    /\b(?:qty|quantity)\b/.test(column) && !/(?:bonus|free|foc|scheme)/.test(column)
+    /\b(?:qty|quantity|stock)\b/.test(column) && !/(?:bonus|free|foc|scheme)/.test(column)
   );
   let purchaseIndex = columns.findIndex(column =>
     /purchase|cost|unit\s*price|rate|trade\s*price|\btp\b/.test(column) && !/sale|retail|mrp/.test(column)
@@ -220,14 +235,27 @@ function parseDelimitedRow(line, header) {
   if (purchaseIndex < 0) purchaseIndex = columns.findIndex(column =>
     /\bprice\b/.test(column) && !/sale|retail|mrp/.test(column)
   );
-  const saleIndex = indexFor(/sale|retail|mrp/);
-  const bonusIndex = indexFor(/bonus|free|foc|scheme/);
+  const saleIndex = columns.findIndex(column =>
+    /^(?:sale|sales|retail|mrp)(?:\s*(?:price|rate))?$/.test(column) && !/(?:tax|discount|amount)/.test(column)
+  );
+  const bonusIndex = indexFor(/bonus|free|foc|scheme|^bns$/);
   const batchIndex = indexFor(/batch|lot/);
   const expiryIndex = indexFor(/expiry|\bexp\b|use\s*by|best\s*before/);
+  const grossIndex = indexFor(/gross/);
+  const discountPercentIndex = columns.findIndex(column =>
+    /disc(?:ount)?/.test(column) && /%|rate|percent/.test(column)
+  );
+  const discountAmountIndex = columns.findIndex(column =>
+    /disc(?:ount)?/.test(column) && /amount|amt|extra/.test(column)
+  );
+  const salesTaxIndex = indexFor(/sales?\s*tax|gst/);
+  const additionalTaxIndex = indexFor(/further|additional|advance|awh|withholding/);
   const netIndex = indexFor(/net/);
   const totalIndex = netIndex >= 0 ? netIndex : columns.findIndex(column =>
     /line\s*total|\bamount\b|\btotal\b/.test(column) && !/gross|discount|tax/.test(column)
   );
+  const itemCodeIndex = indexFor(/(?:item|product)\s*code|^code$/);
+  const packingIndex = indexFor(/pack(?:ing)?|pack\s*size/);
   const get = index => index >= 0 && index < values.length ? values[index] : "";
   const quantity = parseNumber(get(quantityIndex));
   const purchasePrice = parseNumber(get(purchaseIndex));
@@ -236,11 +264,24 @@ function parseDelimitedRow(line, header) {
   const lineTotal = parseNumber(get(totalIndex));
   const expiryRaw = get(expiryIndex);
   const expiryDate = normalizeDate(expiryRaw) || expiryRaw;
+  const salesTaxHeader = salesTaxIndex >= 0 ? columns[salesTaxIndex] : "";
+  const salesTaxValue = parseNumber(get(salesTaxIndex));
   return makeRow(get(descriptionIndex), {
     quantity, purchasePrice, salePrice, bonusQuantity, lineTotal,
-    batchNumber: get(batchIndex), expiryDate,
+    itemCode: get(itemCodeIndex), packing: get(packingIndex),
+    grossAmount: parseNumber(get(grossIndex)),
+    discountPercent: parseNumber(get(discountPercentIndex)),
+    discountAmount: parseNumber(get(discountAmountIndex)),
+    salesTaxPercent: /%|rate|percent/.test(salesTaxHeader) ? salesTaxValue : null,
+    salesTaxAmount: /%|rate|percent/.test(salesTaxHeader) ? null : salesTaxValue,
+    additionalTaxAmount: parseNumber(get(additionalTaxIndex)),
+    netAmount: parseNumber(get(netIndex)),
+    batchNumber: get(batchIndex), rawExpiry: expiryRaw, expiryDate,
     confidence: "medium", rawLine: line
   });
+}
+
+function parseLooseRow  });
 }
 
 function parseLooseRow(line, headerContext) {
@@ -252,7 +293,7 @@ function parseLooseRow(line, headerContext) {
   cleaned = cleaned.replace(/\b(?:batch|lot)\s*(?:no|number|#)?\s*[:#-]?\s*[A-Z0-9][A-Z0-9/-]*/i, " ");
 
   const dates = extractDateTokens(cleaned);
-  const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry)?|use\\s*by|best\\s*before)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i"));
+  const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry)?(?:\\s*date)?|use\\s*by|best\\s*before)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i"));
   let expiryDate = "";
   if (expiryLabel) expiryDate = normalizeDate(expiryLabel[1]) || expiryLabel[1];
   else if (dates.length) expiryDate = dates[dates.length - 1].iso || dates[dates.length - 1].value;
@@ -274,7 +315,7 @@ function parseLooseRow(line, headerContext) {
   const numericValues = trailingNumbers[1].match(NUMBER_RE).map(parseNumber).filter(value => value !== null);
   if (numericValues.length < 2) return null;
   const description = cleaned.slice(0, trailingNumbers.index).replace(/^\s*(?:\d{1,3}[.)-]\s*)?/, "").trim();
-  const hasSaleColumn = /\b(sale|retail|mrp)\b/i.test(headerContext || "");
+  const hasSaleColumn = /\b(?:sale\s*(?:price|rate)|retail\s*(?:price|rate)|mrp)\b/i.test(headerContext || "") && !/\b(?:sale|sales)\s*tax\b/i.test(headerContext || "");
   const hasTotalColumn = /\b(amount|line\s*total|total)\b/i.test(headerContext || "");
   let salePrice = null;
   let lineTotal = null;
