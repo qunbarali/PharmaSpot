@@ -146,6 +146,17 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("does not mistake an expiry-date column for the invoice date", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-EXPIRY-01",
+      "Item | Qty | Purchase | Batch | Expiry Date",
+      "Paracetamol 500mg | 5 | 8.25 | B-20 | 12/2027"
+    ].join("\n"));
+    expect(result.fields.invoiceDate).toBe("");
+    expect(result.rows[0].expiryDate).toBe("2027-12-31");
+  });
+
   test("does not invent missing supplier, invoice, currency or line values", () => {
     const result = parseInvoiceText("Supplier statement only");
     expect(result.fields.supplier).toBe("Supplier statement only");
