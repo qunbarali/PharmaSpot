@@ -430,7 +430,7 @@ function parseInvoiceText(raw) {
     /(?:invoice|bill)\s*[:#]\s*([A-Z0-9][A-Z0-9/-]{2,})/i
   ]);
   const invoiceDateRaw = getLabeledValue(text, [
-    new RegExp("(?:invoice\\s*date|bill\\s*date|date)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
+    new RegExp("(?:invoice\\s*date|bill\\s*date|(?<!expiry\\s)(?<!exp\\s)(?<!due\\s)\\bdate\\b)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
   ]);
   const invoiceDate = normalizeDate(invoiceDateRaw) || invoiceDateRaw;
   let currency = "";
