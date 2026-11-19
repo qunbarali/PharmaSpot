@@ -142,6 +142,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect((await request("POST", "/imports/assign-image", { productId, storedName: "not-a-file.jpg" }, null)).status).toBe(401);
   const malformedUpload = await uploadRequest("invoice.pdf", Buffer.from("not a PDF"));
   expect(malformedUpload.status).toBe(400);
+  const malformedArchive = await uploadRequest("invoice.zip", Buffer.from("not a ZIP"));
+  expect(malformedArchive.status).toBe(400);
   expect(fs.readdirSync(importRoot)).toHaveLength(0);
 
   const deniedDraft = await request("POST", "/imports/commit-purchase", {
