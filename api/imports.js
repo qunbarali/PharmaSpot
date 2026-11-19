@@ -60,6 +60,14 @@ async function requireSignedInUser(req, res) {
   }
 }
 
+function isSafeArchiveEntryPath(entryPath) {
+  const normalizedEntry = String(entryPath || "").replace(/\\/g, "/");
+  const safeEntryPath = path.posix.normalize(normalizedEntry);
+  return Boolean(normalizedEntry && !normalizedEntry.includes("\0") &&
+    !normalizedEntry.startsWith("/") && !path.win32.isAbsolute(normalizedEntry) &&
+    !/^[a-zA-Z]:/.test(normalizedEntry) && safeEntryPath !== ".." && !safeEntryPath.startsWith("../"));
+}
+
 function validateZipFile(filePath) {
   const stat = fs.statSync(filePath);
   if (!stat.isFile() || stat.size < 4 || stat.size > 20 * 1024 * 1024) {
@@ -144,9 +152,8 @@ app.post("/upload", async (req, res) => {
             extractedCount += 1;
             const declaredSize = Number(entry.vars && entry.vars.uncompressedSize || 0);
             if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes + declaredSize > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
-            const normalizedEntry = String(entry.path || "").replace(/\\/g, "/");
-            const safeEntryPath = path.posix.normalize(normalizedEntry);
-            if (!normalizedEntry || normalizedEntry.startsWith("/") || path.win32.isAbsolute(normalizedEntry) || /^[a-zA-Z]:/.test(normalizedEntry) || safeEntryPath === ".." || safeEntryPath.startsWith("../")) throw new Error("ZIP archive contains an unsafe file path.");
+            if (!isSafeArchiveEntryPath(entry.path)) throw new Error("ZIP archive contains an unsafe file path.");
+            const safeEntryPath = path.posix.normalize(String(entry.path || "").replace(/\\/g, "/"));
             const base = path.posix.basename(safeEntryPath);
             if (!base || base.startsWith(".")) continue;
             const targetName = crypto.randomUUID() + ext;
@@ -602,5 +609,7 @@ app.get("/history", async (req, res) => {
     });
   } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
+
+app.isSafeArchiveEntryPath = isSafeArchiveEntryPath;
 
 module.exports = app;
