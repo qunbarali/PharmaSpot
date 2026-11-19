@@ -595,4 +595,4 @@ async function extractInvoice(filePath) {
   return parseInvoiceText(text);
 }
 
-module.exports = { normalizeText, normalizeDate, parseInvoiceText, textItemsToLines, ocrWordsToLines, extractInvoice };
+module.exports = { normalizeText, normalizeDate, parseInvoiceText, textItemsToLines, ocrWordsToLines, validateInvoiceFile: validateFile, extractInvoice };
