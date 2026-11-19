@@ -101,7 +101,9 @@ function extractDateTokens(line) {
 }
 
 function parseNumber(value) {
-  const number = Number(String(value == null ? "" : value).replace(/,/g, "").replace(/[₹$]/g, "").trim());
+  const raw = String(value == null ? "" : value).replace(/,/g, "").replace(/[₹$]/g, "").trim();
+  if (!raw) return null;
+  const number = Number(raw);
   return Number.isFinite(number) ? number : null;
 }
 
