@@ -24,8 +24,8 @@ describe("invoice OCR text parsing", () => {
     const result = parseInvoiceText([
       "ABC DISTRIBUTORS",
       "Invoice No: INV-TABLE-100",
-      "Item | Qty | Bonus | Rate | MRP | Batch | Expiry",
-      "Paracetamol 500mg | 10 | 2 | 12.50 | 20 | B-01 | 12/2027"
+      "Item Code | Description | Qty | Bonus Qty | TP | MRP | Batch No | Expiry Date",
+      "P-001 | Paracetamol 500mg | 10 | 2 | 12.50 | 20 | B-01 | 12/2027"
     ].join("\n"));
     expect(result.rows[0]).toMatchObject({
       productName: "Paracetamol 500mg",
