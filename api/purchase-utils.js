@@ -163,12 +163,20 @@ function validatePurchaseDraft(input) {
   if (!items.length || items.length > 500 || items.some(item => !item || typeof item !== "object")) {
     throw new Error("A purchase must contain between 1 and 500 valid invoice lines.");
   }
-  calculatePurchaseTotal(items);
   const normalizedItems = items.map(item => {
+    const quantity = Number(item.quantity);
+    const paidQuantity = Number(item.paidQuantity == null || item.paidQuantity === "" ? quantity : item.paidQuantity);
+    const purchasePrice = Number(item.purchasePrice);
     const productId = Number(item.productId);
     const salePrice = Number(item.salePrice);
     const bonusQuantity = Number(item.bonusQuantity == null || item.bonusQuantity === "" ? 0 : item.bonusQuantity);
     const expiryDate = normalizeExpiryDate(item.expiryDate);
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(purchasePrice) || purchasePrice < 0) {
+      throw new Error("Every invoice line needs a positive paid quantity and a valid purchase price.");
+    }
+    if (!Number.isFinite(paidQuantity) || paidQuantity !== quantity) {
+      throw new Error("Paid quantity must match the invoice line quantity. Record free stock separately as bonus quantity.");
+    }
     if (!Number.isFinite(bonusQuantity) || bonusQuantity < 0) throw new Error("Bonus/free quantity must be zero or a positive number.");
     if (!Number.isSafeInteger(productId) || productId <= 0 || !Number.isFinite(salePrice) || salePrice < 0 ||
         !String(item.batchNumber || "").trim() || !expiryDate) {
@@ -176,11 +184,15 @@ function validatePurchaseDraft(input) {
     }
     return {
       ...item,
+      quantity,
+      paidQuantity: quantity,
+      purchasePrice,
       bonusQuantity,
       expiryDate,
       sourceDescription: String(item.sourceDescription || item.productName || item.description || "").trim().slice(0, 160)
     };
   });
+  calculatePurchaseTotal(normalizedItems);
 
   return {
     supplier,
