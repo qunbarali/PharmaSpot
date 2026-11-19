@@ -128,6 +128,32 @@ describe("offline invoice OCR integration", () => {
     await expect(extractInvoice(jpegPath)).rejects.toThrow(/safe OCR rendering size/);
   });
 
+  test("rejects oversized WEBP dimensions before decoding", async () => {
+    const imagePath = path.join(directory, "oversized.webp");
+    const webp = Buffer.alloc(30);
+    webp.write("RIFF", 0, "ascii");
+    webp.writeUInt32LE(22, 4);
+    webp.write("WEBP", 8, "ascii");
+    webp.write("VP8X", 12, "ascii");
+    webp.writeUInt32LE(10, 16);
+    webp.writeUIntLE(5000 - 1, 24, 3);
+    webp.writeUIntLE(5000 - 1, 27, 3);
+    fs.writeFileSync(imagePath, webp);
+    await expect(extractInvoice(imagePath)).rejects.toThrow(/safe OCR rendering size/);
+  });
+
+  test("rejects WEBP files without a readable image dimension chunk", async () => {
+    const imagePath = path.join(directory, "malformed.webp");
+    const webp = Buffer.alloc(20);
+    webp.write("RIFF", 0, "ascii");
+    webp.writeUInt32LE(12, 4);
+    webp.write("WEBP", 8, "ascii");
+    webp.write("JUNK", 12, "ascii");
+    webp.writeUInt32LE(0, 16);
+    fs.writeFileSync(imagePath, webp);
+    await expect(extractInvoice(imagePath)).rejects.toThrow(/invalid or unreadable dimensions/);
+  });
+
   test("recognizes text from a local invoice image", async () => {
     const imagePath = path.join(directory, "invoice.jpg");
     fs.writeFileSync(imagePath, makeInvoiceImage());
