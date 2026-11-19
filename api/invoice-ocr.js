@@ -538,6 +538,53 @@ function validateFile(filePath, extension) {
   return stat;
 }
 
+function scoreOcrResult(result) {
+  const text = ocrWordsToLines(result);
+  const data = result && result.data ? result.data : {};
+  const confidence = Number(data.confidence);
+  const wordCount = Array.isArray(data.words)
+    ? data.words.filter(word => String(word && word.text || "").trim()).length
+    : (text.match(/\S+/g) || []).length;
+  const usefulTokens = (text.match(/[A-Za-z0-9]{2,}/g) || []).length;
+  return {
+    text,
+    confidence: Number.isFinite(confidence) ? confidence : 0,
+    wordCount,
+    score: (Number.isFinite(confidence) ? confidence : 0) + Math.min(usefulTokens, 80) * 0.08
+  };
+}
+
+async function recognizeCanvasWithRotation(canvas, worker) {
+  const { createCanvas } = require("@napi-rs/canvas");
+  let best = null;
+  for (const rotation of [0, 90, 270, 180]) {
+    let target = canvas;
+    let temporary = false;
+    if (rotation !== 0) {
+      const width = rotation % 180 === 0 ? canvas.width : canvas.height;
+      const height = rotation % 180 === 0 ? canvas.height : canvas.width;
+      target = createCanvas(width, height);
+      temporary = true;
+      const context = target.getContext("2d");
+      context.translate(width / 2, height / 2);
+      context.rotate(rotation * Math.PI / 180);
+      context.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    }
+    try {
+      const result = await worker.recognize(target.toBuffer("image/png"));
+      const candidate = scoreOcrResult(result);
+      if (!best || candidate.score > best.score) best = candidate;
+      if (candidate.confidence >= 93 && candidate.wordCount >= 12) return candidate.text;
+    } finally {
+      if (temporary) {
+        target.width = 0;
+        target.height = 0;
+      }
+    }
+  }
+  return best ? best.text : "";
+}
+
 async function recognizeImageBuffer(buffer, maxPixels) {
   const { createCanvas, loadImage } = require("@napi-rs/canvas");
   const image = await loadImage(buffer);
@@ -549,8 +596,7 @@ async function recognizeImageBuffer(buffer, maxPixels) {
   context.drawImage(image, 0, 0, image.width, image.height);
   const worker = await createOcrWorker();
   try {
-    const result = await worker.recognize(canvas.toBuffer("image/png"));
-    return ocrWordsToLines(result);
+    return await recognizeCanvasWithRotation(canvas, worker);
   } finally {
     canvas.width = 0;
     canvas.height = 0;
@@ -587,7 +633,12 @@ async function extractPdf(filePath) {
         const content = await page.getTextContent();
         const items = (content.items || []).filter(item => item && typeof item.str === "string" && item.str.trim());
         const nativeText = normalizeText(textItemsToLines(items));
-        let pageText = nativeText.length >= 12 ? nativeText : "";
+        const hasRotatedText = items.some(item => {
+          const transform = Array.isArray(item.transform) ? item.transform : [];
+          return Math.abs(Number(transform[1]) || 0) > 0.75 || Math.abs(Number(transform[2]) || 0) > 0.75;
+        });
+        const nativeWordCount = (nativeText.match(/[A-Za-z0-9]{2,}/g) || []).length;
+        let pageText = !hasRotatedText && nativeText.length >= 40 && nativeWordCount >= 6 ? nativeText : "";
         if (!pageText) {
           if (!worker) worker = await createOcrWorker();
           const baseViewport = page.getViewport({ scale: 1 });
@@ -600,8 +651,7 @@ async function extractPdf(filePath) {
           const canvas = createCanvas(width, height);
           try {
             await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-            const result = await worker.recognize(canvas.toBuffer("image/png"));
-            pageText = ocrWordsToLines(result);
+            pageText = await recognizeCanvasWithRotation(canvas, worker);
           } finally {
             canvas.width = 0;
             canvas.height = 0;
