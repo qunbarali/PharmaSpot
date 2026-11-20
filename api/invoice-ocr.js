@@ -304,16 +304,22 @@ function parseLooseRow(line, headerContext) {
 
   const dates = extractDateTokens(cleaned);
   const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry)?(?:\\s*date)?|use\\s*by|best\\s*before)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i"));
+  let rawExpiry = "";
   let expiryDate = "";
-  if (expiryLabel) expiryDate = normalizeDate(expiryLabel[1]) || expiryLabel[1];
-  else if (dates.length) expiryDate = dates[dates.length - 1].iso || dates[dates.length - 1].value;
+  if (expiryLabel) {
+    rawExpiry = expiryLabel[1];
+    expiryDate = normalizeDate(rawExpiry) || rawExpiry;
+  } else if (dates.length) {
+    rawExpiry = dates[dates.length - 1].value;
+    expiryDate = dates[dates.length - 1].iso || rawExpiry;
+  }
   if (dates.length) {
     for (const date of dates.slice().reverse()) cleaned = cleaned.slice(0, date.index) + " " + cleaned.slice(date.end);
   }
   cleaned = cleaned.replace(/(?:exp(?:iry)?|use\s*by|best\s*before)\s*[:#-]?\s*/ig, " ");
 
   if (!batchNumber) {
-    const trailingBatch = cleaned.match(/\s+([A-Z][A-Z0-9/-]{2,})\s*$/i);
+    const trailingBatch = cleaned.match(/\s+([A-Z][A-Z0-9/-]{1,})\s*$/i);
     if (trailingBatch && /[0-9]/.test(trailingBatch[1])) {
       batchNumber = trailingBatch[1];
       cleaned = cleaned.slice(0, trailingBatch.index);
@@ -343,6 +349,7 @@ function parseLooseRow(line, headerContext) {
     salePrice,
     lineTotal,
     batchNumber,
+    rawExpiry,
     expiryDate,
     confidence: "low",
     rawLine: line
