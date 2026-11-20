@@ -125,14 +125,14 @@ describe("invoice OCR text parsing", () => {
 
   test("separates moderately spaced scanned table columns and parses the resulting row", () => {
     const words = [
-      ["Item", 10, 35], ["Description", 55, 115], ["Qty", 155, 180], ["Rate", 205, 235], ["Batch", 270, 310], ["Expiry", 350, 400],
-      ["Paracetamol", 10, 95], ["500mg", 99, 130], ["10", 170, 185], ["12.50", 210, 245], ["B-01", 275, 305], ["12/2027", 355, 410]
+      ["Description", 10, 80], ["Qty", 125, 150], ["Rate", 175, 205], ["Batch", 240, 280], ["Expiry", 320, 370],
+      ["Paracetamol", 10, 95], ["500mg", 99, 130], ["10", 140, 155], ["12.50", 180, 215], ["B-01", 245, 275], ["12/2027", 325, 380]
     ].map(([text, x0, x1], index) => ({
       text,
       bbox: { x0, x1, y0: index < 5 ? 10 : 40, y1: index < 5 ? 30 : 60 }
     }));
     const lines = ocrWordsToLines({ data: { words } });
-    expect(lines).toContain("Item | Description | Qty | Rate | Batch | Expiry");
+    expect(lines).toContain("Description | Qty | Rate | Batch | Expiry");
     const parsed = parseInvoiceText("ABC DISTRIBUTORS\n" + lines);
     expect(parsed.rows[0]).toMatchObject({
       productName: "Paracetamol 500mg", quantity: 10, purchasePrice: 12.5, batchNumber: "B-01", expiryDate: "2027-12-31"
