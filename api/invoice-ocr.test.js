@@ -219,6 +219,25 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("extracts distributor NTN/GST identifiers and Inv. # invoice labels", () => {
+    const result = parseInvoiceText([
+      "Ahsan Traders - Sadiqabad",
+      "Inv. # SOB-0019883",
+      "Invoice Date: 05/02/2026",
+      "NTN No: 5400033-6",
+      "GST No: 3277786338881",
+      "Currency: PKR"
+    ].join("\n"));
+
+    expect(result.fields).toMatchObject({
+      supplier: "Ahsan Traders - Sadiqabad",
+      invoiceNo: "SOB-0019883",
+      invoiceDate: "2026-02-05",
+      supplierIdentifier: "5400033-6",
+      currency: "PKR"
+    });
+  });
+
   test("keeps line totals distinct from sale prices when the invoice header says amount", () => {
     const result = parseInvoiceText([
       "Demo Supplier",
