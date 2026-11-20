@@ -70,6 +70,15 @@ describe("invoice OCR text parsing", () => {
       expiryDate: "2027-12-31"
     });
     expect(hasStructuredInvoiceText(result.text)).toBe(true);
+
+    const dottedExpiry = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Item Qty Purchase Sale Batch Expiry",
+      "Paracetamol 500mg 10 12.50 15.00 BATCH-01 12.2027"
+    ].join("\n"));
+    expect(dottedExpiry.rows[0]).toMatchObject({
+      purchasePrice: 12.5, salePrice: 15, rawExpiry: "12.2027", expiryDate: "2027-12-31"
+    });
   });
 
   test("preserves PDF text-column gaps as table separators", () => {
