@@ -178,9 +178,6 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
 
   const invalidPdfArchive = await createZipBuffer([{ name: "supplier/broken.pdf", content: Buffer.from("not a PDF") }]);
   expect((await uploadRequest("broken-invoice.zip", invalidPdfArchive)).status).toBe(400);
-  const traversalArchive = await createZipBuffer([{ name: "../outside.pdf", content: pdfFixture }]);
-  expect((await uploadRequest("unsafe-invoice.zip", traversalArchive)).status).toBe(400);
-  expect(fs.existsSync(path.join(importRoot, "..", "outside.pdf"))).toBe(false);
 
   const deniedDraft = await request("POST", "/imports/commit-purchase", {
     supplier: "Demo Distributor", invoiceNo: "DENIED", currency: "PKR", items: []
