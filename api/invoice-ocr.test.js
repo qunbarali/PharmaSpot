@@ -66,6 +66,7 @@ describe("invoice OCR text parsing", () => {
       purchasePrice: 12.5,
       salePrice: 15,
       batchNumber: "BATCH-01",
+      rawExpiry: "31-Dec-2027",
       expiryDate: "2027-12-31"
     });
     expect(hasStructuredInvoiceText(result.text)).toBe(true);
