@@ -52,6 +52,25 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("keeps decimal purchase and sale prices while parsing trailing batch and expiry columns", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-LOOSE-01",
+      "Item Qty Purchase Sale Batch Expiry",
+      "Paracetamol 500mg 10 12.50 15.00 BATCH-01 31-Dec-2027"
+    ].join("\n"));
+
+    expect(result.rows[0]).toMatchObject({
+      productName: "Paracetamol 500mg",
+      quantity: 10,
+      purchasePrice: 12.5,
+      salePrice: 15,
+      batchNumber: "BATCH-01",
+      expiryDate: "2027-12-31"
+    });
+    expect(hasStructuredInvoiceText(result.text)).toBe(true);
+  });
+
   test("preserves PDF text-column gaps as table separators", () => {
     const items = [
       { str: "Item", transform: [10, 0, 0, 10, 10, 100], width: 18 },
