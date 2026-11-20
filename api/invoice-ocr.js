@@ -316,7 +316,7 @@ function parseLooseRow(line, headerContext) {
   if (dates.length) {
     for (const date of dates.slice().reverse()) cleaned = cleaned.slice(0, date.index) + " " + cleaned.slice(date.end);
   }
-  cleaned = cleaned.replace(/(?:exp(?:iry)?|use\s*by|best\s*before)\s*[:#-]?\s*/ig, " ");
+  cleaned = cleaned.replace(/(?:exp(?:iry|y)?|use\s*by|best\s*before)\s*[:#-]?\s*/ig, " ");
 
   if (!batchNumber) {
     const trailingBatch = cleaned.match(/\s+([A-Z][A-Z0-9/-]{1,})\s*$/i);
