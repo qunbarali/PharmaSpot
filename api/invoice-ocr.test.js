@@ -123,6 +123,31 @@ describe("invoice OCR text parsing", () => {
     expect(hasStructuredInvoiceText(invoicePage, true)).toBe(false);
   });
 
+  test("separates moderately spaced scanned table columns and parses the resulting row", () => {
+    const words = [
+      ["Item", 10, 35], ["Description", 55, 115], ["Qty", 155, 180], ["Batch", 220, 260], ["Expiry", 300, 350],
+      ["Paracetamol", 10, 95], ["500mg", 99, 130], ["10", 170, 185], ["B-01", 225, 255], ["12/2027", 305, 360]
+    ].map(([text, x0, x1], index) => ({
+      text,
+      bbox: { x0, x1, y0: index < 5 ? 10 : 40, y1: index < 5 ? 30 : 60 }
+    }));
+    const lines = ocrWordsToLines({ data: { words } });
+    expect(lines).toContain("Item | Description | Qty | Batch | Expiry");
+    const parsed = parseInvoiceText("ABC DISTRIBUTORS\n" + lines);
+    expect(parsed.rows[0]).toMatchObject({
+      productName: "Paracetamol 500mg", quantity: 10, batchNumber: "B-01", expiryDate: "2027-12-31"
+    });
+  });
+
+  test("recognizes abbreviated Adv Tax columns", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Item | Description | Qty | Rate | Batch | Expiry | Adv Tax",
+      "1 | Cetirizine 10mg | 5 | 12.50 | B-01 | 12/2027 | 0.50"
+    ].join("\n"));
+    expect(result.rows[0]).toMatchObject({ productName: "Cetirizine 10mg", additionalTaxAmount: 0.5 });
+  });
+
   test("normalizes OCR whitespace and bounds output", () => {
     expect(normalizeText("  ABC  \r\n\r\n\r\n  123  ")).toBe("ABC\n\n 123");
     expect(normalizeText("x".repeat(250000))).toHaveLength(200000);
