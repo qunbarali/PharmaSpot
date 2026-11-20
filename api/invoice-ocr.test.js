@@ -3,6 +3,35 @@ const os = require("os");
 const path = require("path");
 const { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, extractInvoice } = require("./invoice-ocr");
 
+function createTextPdf(lines) {
+  const escapePdfText = value => String(value).replace(/\\\\/g, "\\\\\\\\").replace(/\\(/g, "\\\\(").replace(/\\)/g, "\\\\)");
+  const commands = [
+    "BT",
+    "/F1 10 Tf",
+    "40 760 Td",
+    ...lines.map((line, index) => (index ? "0 -14 Td " : "") + "(" + escapePdfText(line) + ") Tj"),
+    "ET"
+  ].join("\\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Length " + Buffer.byteLength(commands, "ascii") + " >>\\nstream\\n" + commands + "\\nendstream"
+  ];
+  let pdf = "%PDF-1.4\\n";
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(pdf, "ascii"));
+    pdf += (index + 1) + " 0 obj\\n" + objects[index] + "\\nendobj\\n";
+  }
+  const xrefOffset = Buffer.byteLength(pdf, "ascii");
+  pdf += "xref\\n0 " + (objects.length + 1) + "\\n0000000000 65535 f \\n";
+  for (const offset of offsets.slice(1)) pdf += String(offset).padStart(10, "0") + " 00000 n \\n";
+  pdf += "trailer\\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\\nstartxref\\n" + xrefOffset + "\\n%%EOF";
+  return Buffer.from(pdf, "ascii");
+}
+
 describe("invoice OCR text parsing", () => {
   test("captures explicitly labeled packing, bonus, discount and tax values separately", () => {
     const result = parseInvoiceText("Supplier\nProduct: Paracetamol 500mg; Pack: 10x10; Qty: 4; Purchase: 125; Bonus: 1; Discount: 5%; Gross: 500; Sales Tax: 2%; Tax Amount: 10; Net Amount: 485; Batch: B-01; Expiry: 12/2027");
@@ -306,6 +335,42 @@ describe("invoice OCR text parsing", () => {
     expect(result.fields.currency).toBe("");
     expect(result.rows).toEqual([]);
     expect(result.reviewRequired).toBe(true);
+  });
+
+  test("extracts searchable supplier invoice text from a real PDF file", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pharmaspot-ocr-pdf-"));
+    try {
+      const pdfPath = path.join(directory, "supplier-invoice.pdf");
+      fs.writeFileSync(pdfPath, createTextPdf([
+        "ABC DISTRIBUTORS",
+        "Supplier Code: SUP-001",
+        "Invoice No: INV-PDF-100",
+        "Invoice Date: 2026-11-10",
+        "Currency: PKR",
+        "Item | Description | Qty | Purchase Price | Sale Price | Batch No | Expiry Date",
+        "P-001 | Paracetamol 500mg | 10 | 12.50 | 20.00 | B-01 | 12/2027"
+      ]));
+      const result = await extractInvoice(pdfPath);
+      expect(result.fields).toMatchObject({
+        supplier: "ABC DISTRIBUTORS",
+        supplierIdentifier: "SUP-001",
+        invoiceNo: "INV-PDF-100",
+        invoiceDate: "2026-11-10",
+        currency: "PKR"
+      });
+      expect(result.rows[0]).toMatchObject({
+        productName: "Paracetamol 500mg",
+        quantity: 10,
+        purchasePrice: 12.5,
+        salePrice: 20,
+        batchNumber: "B-01",
+        expiryDate: "2027-12-31",
+        needsReview: true
+      });
+      expect(result.reviewRequired).toBe(true);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test("rejects unsupported and malformed document files before OCR", async () => {
