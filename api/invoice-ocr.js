@@ -488,11 +488,11 @@ function parseInvoiceText(raw) {
   const supplier = inferSupplier(lines, text);
   const supplierIdentifier = getLabeledValue(text, [
     /(?:supplier|vendor|distributor)\s*(?:id|code|no\.?|number)\s*[:#-]\s*([A-Z0-9][A-Z0-9/-]*)/i,
-    /\b(?:NTN|GSTIN?|tax\s*id|registration\s*(?:no|number))\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{2,})/i
+    /\b(?:NTN|GSTIN|GST|tax\s*id|registration\s*(?:no|number))\s*(?:no\.?|number|#)?\s*[:#=-]?\s*([A-Z0-9][A-Z0-9/-]{2,})/i
   ]);
   const invoiceNo = getLabeledValue(text, [
-    /(?:invoice|bill|inv|voucher)\s*(?:no\.?|number|num|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]*)/i,
-    /(?:invoice|bill|inv|voucher)\s*[:#]\s*([A-Z0-9][A-Z0-9/-]*)/i
+    /(?:invoice|bill|inv\.?|voucher)\s*(?:no\.?|number|num|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]*)/i,
+    /(?:invoice|bill|inv\.?|voucher)\s*[:#]\s*([A-Z0-9][A-Z0-9/-]*)/i
   ]);
   const invoiceDateRaw = getLabeledValue(text, [
     new RegExp("(?:invoice\\s*date|bill\\s*date|(?<!expiry\\s)(?<!exp\\s)(?<!due\\s)\\bdate\\b)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
