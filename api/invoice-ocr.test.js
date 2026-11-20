@@ -125,8 +125,8 @@ describe("invoice OCR text parsing", () => {
 
   test("separates moderately spaced scanned table columns and parses the resulting row", () => {
     const words = [
-      ["Description", 10, 80], ["Qty", 125, 150], ["Rate", 175, 205], ["Batch", 240, 280], ["Expiry", 320, 370],
-      ["Paracetamol", 10, 95], ["500mg", 99, 130], ["10", 140, 155], ["12.50", 180, 215], ["B-01", 245, 275], ["12/2027", 325, 380]
+      ["Description", 10, 80], ["Qty", 160, 185], ["Rate", 210, 240], ["Batch", 275, 315], ["Expiry", 355, 405],
+      ["Paracetamol", 10, 95], ["500mg", 99, 130], ["10", 160, 175], ["12.50", 215, 250], ["B-01", 280, 310], ["12/2027", 360, 415]
     ].map(([text, x0, x1], index) => ({
       text,
       bbox: { x0, x1, y0: index < 5 ? 10 : 40, y1: index < 5 ? 30 : 60 }
