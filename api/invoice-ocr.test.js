@@ -126,6 +126,25 @@ describe("invoice OCR text parsing", () => {
     expect(result.reviewRequired).toBe(true);
   });
 
+  test("prefers explicit supplier-name and invoice-currency labels and accepts short invoice numbers", () => {
+    const result = parseInvoiceText([
+      "Supplier Name: Ahsan Traders",
+      "Supplier No: 12",
+      "Invoice No: 07",
+      "Invoice Date: 18-11-2026",
+      "Currency: PKR",
+      "Exchange rate reference: USD/PKR 3.75"
+    ].join("\n"));
+
+    expect(result.fields).toMatchObject({
+      supplier: "Ahsan Traders",
+      supplierIdentifier: "12",
+      invoiceNo: "07",
+      invoiceDate: "2026-11-18",
+      currency: "PKR"
+    });
+  });
+
   test("keeps line totals distinct from sale prices when the invoice header says amount", () => {
     const result = parseInvoiceText([
       "Demo Supplier",
