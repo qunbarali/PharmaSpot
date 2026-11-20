@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const express = require("express");
+const archiver = require("archiver");
 
 jest.setTimeout(30000);
 
@@ -47,6 +48,18 @@ function request(method, route, body, token = adminToken) {
     req.on("error", reject);
     if (payload) req.write(payload);
     req.end();
+  });
+}
+
+function createZipBuffer(entries) {
+  return new Promise((resolve, reject) => {
+    const archive = archiver("zip", { zlib: { level: 0 } });
+    const chunks = [];
+    archive.on("data", chunk => chunks.push(chunk));
+    archive.once("error", reject);
+    archive.once("end", () => resolve(Buffer.concat(chunks)));
+    for (const entry of entries) archive.append(entry.content, { name: entry.name });
+    try { archive.finalize(); } catch (error) { reject(error); }
   });
 }
 
@@ -150,6 +163,24 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const malformedArchive = await uploadRequest("invoice.zip", Buffer.from("not a ZIP"));
   expect(malformedArchive.status).toBe(400);
   expect(fs.readdirSync(importRoot)).toHaveLength(0);
+
+  const pdfFixture = Buffer.from("%PDF-1.4\\nZIP invoice fixture\\n");
+  const pdfArchive = await createZipBuffer([{ name: "supplier/invoice-page-1.pdf", content: pdfFixture }]);
+  const pdfArchiveUpload = await uploadRequest("supplier-invoices.zip", pdfArchive);
+  expect(pdfArchiveUpload.status).toBe(200);
+  expect(pdfArchiveUpload.data.invoiceReviewRequired).toBe(true);
+  const uploadedArchive = pdfArchiveUpload.data.files.find(file => file.type === ".zip");
+  expect(uploadedArchive.extractedDocuments).toEqual([
+    expect.objectContaining({ originalName: "invoice-page-1.pdf", type: ".pdf", storedName: expect.any(String) })
+  ]);
+  const extractedPdf = uploadedArchive.extractedDocuments[0];
+  expect(fs.readFileSync(path.join(importRoot, extractedPdf.storedName)).subarray(0, 5).toString()).toBe("%PDF-");
+
+  const invalidPdfArchive = await createZipBuffer([{ name: "supplier/broken.pdf", content: Buffer.from("not a PDF") }]);
+  expect((await uploadRequest("broken-invoice.zip", invalidPdfArchive)).status).toBe(400);
+  const traversalArchive = await createZipBuffer([{ name: "../outside.pdf", content: pdfFixture }]);
+  expect((await uploadRequest("unsafe-invoice.zip", traversalArchive)).status).toBe(400);
+  expect(fs.existsSync(path.join(importRoot, "..", "outside.pdf"))).toBe(false);
 
   const deniedDraft = await request("POST", "/imports/commit-purchase", {
     supplier: "Demo Distributor", invoiceNo: "DENIED", currency: "PKR", items: []
