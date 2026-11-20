@@ -156,7 +156,7 @@ function extractExplicitRowFields(rawLine) {
   const salesTaxAmount = getExplicitRowNumber(line, [/(?:sales\s*tax|gst|tax)\s*(?:amount|amt)\s*[:=]\s*([\d,.]+)/i]);
   const additionalTaxAmount = getExplicitRowNumber(line, [/(?:additional\s*tax|adv(?:ance)?\s*tax|withholding\s*tax|further\s*tax)\s*(?:amount|amt)?\s*[:=]\s*([\d,.]+)/i]);
   const netAmount = getExplicitRowNumber(line, [/(?:net\s*(?:amount|total)|line\s*total|amount)\s*[:=]\s*([\d,.]+)/i]);
-  const rawExpiry = getExplicitRowValue(line, [/(?:exp(?:iry)?(?:\s*date)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
+  const rawExpiry = getExplicitRowValue(line, [/(?:exp(?:iry|y)?(?:\s*date)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
   return { itemCode, packing, bonusQuantity: bonusQuantity ?? 0, discountPercent, discountAmount, grossAmount, salesTaxPercent, salesTaxAmount, additionalTaxAmount, netAmount, rawExpiry };
 }
 
@@ -244,7 +244,7 @@ function parseDelimitedRow(line, header) {
   );
   const bonusIndex = indexFor(/bonus|free|foc|scheme|^bns$/);
   const batchIndex = indexFor(/batch|lot/);
-  const expiryIndex = indexFor(/expiry|\bexp\b|use\s*by|best\s*before/);
+  const expiryIndex = indexFor(/expiry|\bexpy?\b|use\s*by|best\s*before/);
   const grossIndex = indexFor(/gross/);
   const discountPercentIndex = columns.findIndex(column =>
     /disc(?:ount)?/.test(column) && /%|rate|percent/.test(column)
@@ -303,7 +303,7 @@ function parseLooseRow(line, headerContext) {
   for (const pattern of batchLabelPatterns) cleaned = cleaned.replace(pattern, " ");
 
   const dates = extractDateTokens(cleaned);
-  const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry)?(?:\\s*date)?|use\\s*by|best\\s*before)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i"));
+  const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry|y)?(?:\\s*date)?|use\\s*by|best\\s*before)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i"));
   let rawExpiry = "";
   let expiryDate = "";
   if (expiryLabel) {
