@@ -299,7 +299,7 @@ function parseLooseRow(line, headerContext) {
     /(?:batch|lot)\s*(?:no\.?|number|#)?\s*[:=]\s*([A-Z0-9][A-Z0-9/-]*)/i,
     /(?:batch|lot)\s*#\s*([A-Z0-9][A-Z0-9/-]*)/i
   ];
-  const batchNumber = getLabeledValue(cleaned, batchLabelPatterns);
+  let batchNumber = getLabeledValue(cleaned, batchLabelPatterns);
   for (const pattern of batchLabelPatterns) cleaned = cleaned.replace(pattern, " ");
 
   const dates = extractDateTokens(cleaned);
