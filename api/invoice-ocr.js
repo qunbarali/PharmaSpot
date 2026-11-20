@@ -117,7 +117,9 @@ function getLabeledValue(text, patterns) {
 
 function inferSupplier(lines, text) {
   const explicit = getLabeledValue(text, [
-    /(?:supplier|vendor|distributor|bill(?:ed)?\s+from|sold\s+by)\s*[:#-]\s*([^\n|]+)/i
+    /(?:supplier|vendor|distributor)\s*(?:name|title)\s*[:#=-]\s*([^\n|]+)/i,
+    /(?:bill(?:ed)?\s+from|sold\s+by)\s*[:#=-]\s*([^\n|]+)/i,
+    /(?:supplier|vendor|distributor)\s*[:#=-]\s*([^\n|]+)/i
   ]);
   if (explicit) return explicit;
   const ignored = /^(?:tax\s+invoice|invoice|bill|purchase\s+invoice|duplicate|original|copy)$/i;
@@ -467,23 +469,29 @@ function parseInvoiceText(raw) {
   const lines = text.split("\n").map(line => line.trim()).filter(Boolean).slice(0, MAX_LINES);
   const supplier = inferSupplier(lines, text);
   const supplierIdentifier = getLabeledValue(text, [
-    /(?:supplier|vendor|distributor)\s*(?:id|code)\s*[:#-]\s*([A-Z0-9/-]+)/i,
-    /\b(?:NTN|GSTIN?|tax\s*id|registration\s*(?:no|number))\s*[:#-]?\s*([A-Z0-9/-]{3,})/i
+    /(?:supplier|vendor|distributor)\s*(?:id|code|no\.?|number)\s*[:#-]\s*([A-Z0-9][A-Z0-9/-]*)/i,
+    /\b(?:NTN|GSTIN?|tax\s*id|registration\s*(?:no|number))\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{2,})/i
   ]);
   const invoiceNo = getLabeledValue(text, [
-    /(?:invoice|bill|inv|voucher)\s*(?:no\.?|number|num|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]{2,})/i,
-    /(?:invoice|bill)\s*[:#]\s*([A-Z0-9][A-Z0-9/-]{2,})/i
+    /(?:invoice|bill|inv|voucher)\s*(?:no\.?|number|num|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/-]*)/i,
+    /(?:invoice|bill|inv|voucher)\s*[:#]\s*([A-Z0-9][A-Z0-9/-]*)/i
   ]);
   const invoiceDateRaw = getLabeledValue(text, [
     new RegExp("(?:invoice\\s*date|bill\\s*date|(?<!expiry\\s)(?<!exp\\s)(?<!due\\s)\\bdate\\b)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
   ]);
   const invoiceDate = normalizeDate(invoiceDateRaw) || invoiceDateRaw;
+  const explicitCurrency = getLabeledValue(text, [
+    /(?:invoice\s*)?currency\s*[:#=-]\s*(PKR|INR|USD|Rs\.?|₹|\$)/i
+  ]);
   let currency = "";
-  if (/\bUSD\b/i.test(text)) currency = "USD";
+  if (/^(?:PKR|Rs\.?)$/i.test(explicitCurrency)) currency = "PKR";
+  else if (/^INR$/i.test(explicitCurrency) || explicitCurrency === "₹") currency = "INR";
+  else if (/^USD$/i.test(explicitCurrency) || explicitCurrency === "$") currency = "USD";
+  else if (/\bUSD\b/i.test(text)) currency = "USD";
   else if (/\bINR\b/i.test(text)) currency = "INR";
   else if (/\bPKR\b/i.test(text)) currency = "PKR";
   else if (/₹/.test(text)) currency = "INR";
-  else if (/\bRs\.?\b/i.test(text)) currency = "PKR";
+  else if (/\bRs\.?/i.test(text)) currency = "PKR";
   else if (/\$/.test(text)) currency = "USD";
   if (!CURRENCY_CODES.has(currency)) currency = "";
 
