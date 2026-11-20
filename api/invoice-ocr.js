@@ -464,6 +464,13 @@ function ocrWordsToLines(result) {
   }).join("\n");
 }
 
+function hasStructuredInvoiceText(raw, hasRotatedText = false) {
+  if (hasRotatedText) return false;
+  const text = normalizeText(raw);
+  if (text.length < 40 || (text.match(/[A-Za-z0-9]{2,}/g) || []).length < 6) return false;
+  return parseInvoiceText(text).rows.length > 0;
+}
+
 function parseInvoiceText(raw) {
   const text = normalizeText(raw);
   const lines = text.split("\n").map(line => line.trim()).filter(Boolean).slice(0, MAX_LINES);
@@ -730,8 +737,7 @@ async function extractPdf(filePath) {
           const transform = Array.isArray(item.transform) ? item.transform : [];
           return Math.abs(Number(transform[1]) || 0) > 0.75 || Math.abs(Number(transform[2]) || 0) > 0.75;
         });
-        const nativeWordCount = (nativeText.match(/[A-Za-z0-9]{2,}/g) || []).length;
-        let pageText = !hasRotatedText && nativeText.length >= 40 && nativeWordCount >= 6 ? nativeText : "";
+        let pageText = hasStructuredInvoiceText(nativeText, hasRotatedText) ? nativeText : "";
         if (!pageText) {
           if (!worker) worker = await createOcrWorker();
           const baseViewport = page.getViewport({ scale: 1 });
@@ -744,7 +750,8 @@ async function extractPdf(filePath) {
           const canvas = createCanvas(width, height);
           try {
             await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-            pageText = await recognizeCanvasWithRotation(canvas, worker);
+            const recognizedText = await recognizeCanvasWithRotation(canvas, worker);
+            pageText = normalizeText([nativeText, recognizedText].filter(Boolean).join("\n"));
           } finally {
             canvas.width = 0;
             canvas.height = 0;
@@ -783,4 +790,4 @@ async function extractInvoice(filePath) {
   return parseInvoiceText(text);
 }
 
-module.exports = { normalizeText, normalizeDate, parseInvoiceText, textItemsToLines, ocrWordsToLines, validateInvoiceFile: validateFile, extractInvoice };
+module.exports = { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, validateInvoiceFile: validateFile, extractInvoice };
