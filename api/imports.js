@@ -44,6 +44,7 @@ const upload = multer({
 
 const cleanName = (value) => String(value || "").toLowerCase().replace(/\.[^.]+$/, "").replace(/[^a-z0-9]+/g, "");
 const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const invoiceDocumentExts = new Set([".pdf", ...imageExts]);
 
 async function requireSignedInUser(req, res) {
   try {
@@ -148,7 +149,7 @@ app.post("/upload", async (req, res) => {
           for (const entry of directory.files) {
             if (entry.type !== "File") continue;
             const ext = path.extname(entry.path).toLowerCase();
-            if (!imageExts.has(ext)) continue;
+            if (!invoiceDocumentExts.has(ext)) continue;
             extractedCount += 1;
             const declaredSize = Number(entry.vars && entry.vars.uncompressedSize || 0);
             if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes + declaredSize > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
@@ -177,14 +178,15 @@ app.post("/upload", async (req, res) => {
               entry.pipe(limiter).pipe(output);
             });
             extractedBytes += actualBytes;
-            const signature = fs.readFileSync(targetPath).subarray(0, 12);
-            const validImage = (ext === ".jpg" || ext === ".jpeg") ? signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff
-              : ext === ".png" ? signature.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
-              : ext === ".webp" ? signature.toString("ascii", 0, 4) === "RIFF" && signature.toString("ascii", 8, 12) === "WEBP" : false;
-            if (!validImage) { fs.unlinkSync(targetPath); continue; }
-            extracted.push({ originalName: base, storedName: targetName, suggestedName: cleanName(base) });
+            try {
+              validateInvoiceFile(targetPath, ext);
+            } catch (_) {
+              throw new Error("ZIP archive contains an invalid supported document: " + base);
+            }
+            extracted.push({ originalName: base, storedName: targetName, type: ext, suggestedName: cleanName(base) });
           }
-          record.extractedImages = extracted;
+          record.extractedDocuments = extracted;
+          record.extractedImages = extracted.filter(document => imageExts.has(document.type));
         }
         files.push(record);
       }
@@ -202,7 +204,7 @@ app.post("/upload", async (req, res) => {
       res.json({
         files: files.map(({ path: _path, ...file }) => file),
         imageSuggestions,
-        invoiceReviewRequired: files.some(file => file.type === ".pdf" || imageExts.has(file.type)),
+        invoiceReviewRequired: files.some(file => file.type === ".pdf" || imageExts.has(file.type) || (file.extractedDocuments || []).length > 0),
         note: "Files are staged only. Review invoice line items and image matches before applying changes. OCR drafts are available for supported PDFs and images. Verify every field against the original invoice before approval.",
       });
     } catch (err) {
