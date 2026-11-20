@@ -6,11 +6,13 @@ const { extractInvoice, enhanceCanvasForOcr } = require("./invoice-ocr");
 
 jest.setTimeout(120000);
 
-function makeInvoiceImage(format = "image/jpeg") {
+function makeInvoiceImage(format = "image/jpeg", transparent = false) {
   const canvas = createCanvas(1800, 520);
   const context = canvas.getContext("2d");
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (!transparent) {
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
   context.fillStyle = "#111111";
   context.font = "bold 82px Arial";
   context.fillText("INVOICE NO INV-TEST-100", 70, 170);
@@ -229,6 +231,14 @@ test("recognizes text from a local invoice image", async () => {
   test("recognizes text from a local PNG invoice image", async () => {
     const imagePath = path.join(directory, "invoice.png");
     fs.writeFileSync(imagePath, makeInvoiceImage("image/png"));
+    const result = await extractInvoice(imagePath);
+    expect(result.reviewRequired).toBe(true);
+    expect(result.text.toUpperCase()).toContain("INVOICE");
+  });
+
+  test("recognizes a transparent PNG invoice over a white OCR canvas", async () => {
+    const imagePath = path.join(directory, "transparent-invoice.png");
+    fs.writeFileSync(imagePath, makeInvoiceImage("image/png", true));
     const result = await extractInvoice(imagePath);
     expect(result.reviewRequired).toBe(true);
     expect(result.text.toUpperCase()).toContain("INVOICE");
