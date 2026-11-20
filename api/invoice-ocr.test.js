@@ -1,7 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { normalizeText, normalizeDate, parseInvoiceText, textItemsToLines, ocrWordsToLines, extractInvoice } = require("./invoice-ocr");
+const { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, extractInvoice } = require("./invoice-ocr");
 
 describe("invoice OCR text parsing", () => {
   test("captures explicitly labeled packing, bonus, discount and tax values separately", () => {
@@ -72,6 +72,26 @@ describe("invoice OCR text parsing", () => {
       ["10", 250, 270, 50, 70], ["2", 350, 362, 50, 70]
     ].map(([text, x0, x1, y0, y1]) => ({ text, bbox: { x0, x1, y0, y1 } }));
     expect(ocrWordsToLines({ data: { text: "fallback", words } })).toBe("Item | Qty | Bonus\nParacetamol 500mg | 10 | 2");
+  });
+
+  test("uses native PDF text only when it contains structured invoice rows", () => {
+    const invoicePage = [
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-100",
+      "Item Qty Purchase Sale Batch Expiry",
+      "Paracetamol 500mg 10 12.50 15.00 BATCH-01 31-Dec-2027"
+    ].join("\n");
+    const metadataOnlyPage = [
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-100",
+      "Invoice Date: 16-11-2026",
+      "Currency: PKR",
+      "Tax Invoice Original Copy"
+    ].join("\n");
+
+    expect(hasStructuredInvoiceText(invoicePage)).toBe(true);
+    expect(hasStructuredInvoiceText(metadataOnlyPage)).toBe(false);
+    expect(hasStructuredInvoiceText(invoicePage, true)).toBe(false);
   });
 
   test("normalizes OCR whitespace and bounds output", () => {
