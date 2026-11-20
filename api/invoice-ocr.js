@@ -580,7 +580,27 @@ function scoreOcrResult(result) {
   };
 }
 
+function enhanceCanvasForOcr(canvas) {
+  const context = canvas.getContext("2d");
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = image.data;
+  const lookup = new Uint8Array(256);
+  for (let value = 0; value < 256; value += 1) {
+    lookup[value] = Math.max(0, Math.min(255, Math.round((value - 128) * 1.6 + 128)));
+  }
+  for (let index = 0; index < pixels.length; index += 4) {
+    const gray = (pixels[index] * 77 + pixels[index + 1] * 150 + pixels[index + 2] * 29) >> 8;
+    const value = lookup[gray];
+    pixels[index] = value;
+    pixels[index + 1] = value;
+    pixels[index + 2] = value;
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
 async function recognizeCanvasWithRotation(canvas, worker) {
+  enhanceCanvasForOcr(canvas);
   const { createCanvas } = require("@napi-rs/canvas");
   let best = null;
   for (const rotation of [0, 90, 270, 180]) {
@@ -801,4 +821,4 @@ async function extractInvoice(filePath) {
   return parseInvoiceText(text);
 }
 
-module.exports = { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, validateInvoiceFile: validateFile, extractInvoice };
+module.exports = { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, enhanceCanvasForOcr, validateInvoiceFile: validateFile, extractInvoice };
