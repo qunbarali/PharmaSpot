@@ -724,6 +724,8 @@ async function recognizeImageBuffer(buffer, maxPixels) {
   if (!Number.isSafeInteger(pixels) || pixels > maxPixels) throw new Error("The uploaded image exceeds the safe OCR rendering size.");
   const canvas = createCanvas(image.width, image.height);
   const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, image.width, image.height);
   context.drawImage(image, 0, 0, image.width, image.height);
   const worker = await createOcrWorker();
   try {
@@ -780,7 +782,10 @@ async function extractPdf(filePath) {
           if (!width || !height || width * height > MAX_RENDER_PIXELS) throw new Error("A PDF page exceeds the safe OCR rendering size.");
           const canvas = createCanvas(width, height);
           try {
-            await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+            const context = canvas.getContext("2d");
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, width, height);
+            await page.render({ canvasContext: context, viewport }).promise;
             const recognizedText = await recognizeCanvasWithRotation(canvas, worker);
             pageText = normalizeText([nativeText, recognizedText].filter(Boolean).join("\n"));
           } finally {
