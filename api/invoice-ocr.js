@@ -8,7 +8,7 @@ const MAX_PDF_PAGES = 30;
 const MAX_RENDER_PIXELS = 12000000;
 const optionalRequire = name => { try { return require(name); } catch (_) { return null; } };
 
-const DATE_SOURCE = "(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}|\\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}|\\d{1,2}[./-]\\d{4}|\\d{4}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{4})";
+const DATE_SOURCE = "(?:\\d{4}[./-]\\d{1,2}[./-]\\d{1,2}|\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}|\\d{1,2}[- ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[- ]\\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}|\\d{1,2}[/-]\\d{4}|\\d{4}[/-]\\d{1,2}|\\d{1,2}[/-]\\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{4})";
 const NUMBER_SOURCE = "(?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d{1,4})?";
 const NUMBER_RE = new RegExp(NUMBER_SOURCE, "g");
 const CURRENCY_CODES = new Set(["PKR", "INR", "USD"]);
@@ -295,8 +295,12 @@ function parseLooseRow(line, headerContext) {
   if (/\b(?:invoice|bill)\s*(?:no|number|date)\b/i.test(line) || /\b(?:supplier|vendor|distributor|ntn|gstin|tax\s*id)\s*[:#]/i.test(line)) return null;
 
   let cleaned = line;
-  let batchNumber = getLabeledValue(cleaned, [/(?:batch|lot)\s*(?:no|number|#)?\s*[:#-]\s*([A-Z0-9][A-Z0-9/-]*)/i]);
-  cleaned = cleaned.replace(/\b(?:batch|lot)\s*(?:no|number|#)?\s*[:#-]?\s*[A-Z0-9][A-Z0-9/-]*/i, " ");
+  const batchLabelPatterns = [
+    /(?:batch|lot)\s*(?:no\.?|number|#)?\s*[:=]\s*([A-Z0-9][A-Z0-9/-]*)/i,
+    /(?:batch|lot)\s*#\s*([A-Z0-9][A-Z0-9/-]*)/i
+  ];
+  const batchNumber = getLabeledValue(cleaned, batchLabelPatterns);
+  for (const pattern of batchLabelPatterns) cleaned = cleaned.replace(pattern, " ");
 
   const dates = extractDateTokens(cleaned);
   const expiryLabel = cleaned.match(new RegExp("(?:exp(?:iry)?(?:\\s*date)?|use\\s*by|best\\s*before)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i"));
