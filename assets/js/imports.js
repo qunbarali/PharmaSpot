@@ -75,7 +75,7 @@ function updateImportExchangeRate() {
 
 function runInvoiceOcr(files) {
   const candidates = (files || []).flatMap(file =>
-    file.type === ".zip" ? (file.extractedImages || []) : [file]
+    file.type === ".zip" ? (file.extractedDocuments || file.extractedImages || []) : [file]
   );
   const supported = candidates.filter(file =>
     [".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(file.type || String(file.storedName || "").slice(String(file.storedName || "").lastIndexOf(".")).toLowerCase())
