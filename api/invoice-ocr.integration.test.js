@@ -2,7 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { createCanvas, loadImage } = require("@napi-rs/canvas");
-const { extractInvoice } = require("./invoice-ocr");
+const { extractInvoice, enhanceCanvasForOcr } = require("./invoice-ocr");
 
 jest.setTimeout(120000);
 
@@ -186,7 +186,23 @@ describe("offline invoice OCR integration", () => {
     await expect(extractInvoice(imagePath)).rejects.toThrow(/invalid or unreadable dimensions/);
   });
 
-  test("recognizes text from a local invoice image", async () => {
+  test("enhances low-contrast scan pixels before OCR", () => {
+  const canvas = createCanvas(2, 1);
+  const context = canvas.getContext("2d");
+  context.fillStyle = "rgb(100, 100, 100)";
+  context.fillRect(0, 0, 1, 1);
+  context.fillStyle = "rgb(240, 240, 240)";
+  context.fillRect(1, 0, 1, 1);
+
+  enhanceCanvasForOcr(canvas);
+  const pixels = context.getImageData(0, 0, 2, 1).data;
+  expect(pixels[0]).toBeLessThan(100);
+  expect(pixels[4]).toBe(255);
+  expect(pixels[0]).toBe(pixels[1]);
+  expect(pixels[1]).toBe(pixels[2]);
+});
+
+test("recognizes text from a local invoice image", async () => {
     const imagePath = path.join(directory, "invoice.jpg");
     fs.writeFileSync(imagePath, makeInvoiceImage());
     const result = await extractInvoice(imagePath);
