@@ -139,6 +139,17 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("recognizes the Expy expiry heading used on distributor invoices", () => {
+    const result = parseInvoiceText([
+      "CRESCENT DISTRIBUTORS",
+      "Item Code | Description | Packing | Batch Number | Expy | Qty | Bon | Rate | Gross Amount | Total Amount",
+      "350 | SILVORA TAB 100MG | 10,T | 26L024 | 10/28 | 2 | 0 | 114.00 | 228.00 | 228.00"
+    ].join("\n"));
+    expect(result.rows[0]).toMatchObject({
+      itemCode: "350", packing: "10,T", batchNumber: "26L024", rawExpiry: "10/28", expiryDate: "2028-10-31"
+    });
+  });
+
   test("recognizes abbreviated Adv Tax columns", () => {
     const result = parseInvoiceText([
       "ABC DISTRIBUTORS",
