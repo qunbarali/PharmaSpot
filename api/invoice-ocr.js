@@ -154,7 +154,7 @@ function extractExplicitRowFields(rawLine) {
   const grossAmount = getExplicitRowNumber(line, [/(?:gross(?:\s*amount)?|gross\s*total)\s*[:=]\s*([\d,.]+)/i]);
   const salesTaxPercent = getExplicitRowNumber(line, [/(?:sales\s*tax|gst|tax)\s*(?:%|percent|rate)?\s*[:=]\s*([\d,.]+)\s*%?/i]);
   const salesTaxAmount = getExplicitRowNumber(line, [/(?:sales\s*tax|gst|tax)\s*(?:amount|amt)\s*[:=]\s*([\d,.]+)/i]);
-  const additionalTaxAmount = getExplicitRowNumber(line, [/(?:additional\s*tax|advance\s*tax|withholding\s*tax|further\s*tax)\s*(?:amount|amt)?\s*[:=]\s*([\d,.]+)/i]);
+  const additionalTaxAmount = getExplicitRowNumber(line, [/(?:additional\s*tax|adv(?:ance)?\s*tax|withholding\s*tax|further\s*tax)\s*(?:amount|amt)?\s*[:=]\s*([\d,.]+)/i]);
   const netAmount = getExplicitRowNumber(line, [/(?:net\s*(?:amount|total)|line\s*total|amount)\s*[:=]\s*([\d,.]+)/i]);
   const rawExpiry = getExplicitRowValue(line, [/(?:exp(?:iry)?(?:\s*date)?|use\s*by|best\s*before)\s*[:=]\s*([^;|]+)/i]);
   return { itemCode, packing, bonusQuantity: bonusQuantity ?? 0, discountPercent, discountAmount, grossAmount, salesTaxPercent, salesTaxAmount, additionalTaxAmount, netAmount, rawExpiry };
@@ -254,7 +254,7 @@ function parseDelimitedRow(line, header) {
   );
   const salesTaxIndex = indexFor(/sales?\s*tax|gst/);
   const additionalTaxIndexes = columns.reduce((indexes, column, index) => {
-    if (/fur(?:ther)?\.?\s*tax|additional|advance|awh|withholding/.test(column) && !/%|rate|percent/.test(column)) indexes.push(index);
+    if (/fur(?:ther)?\.?\s*tax|additional|advance|adv\.?|awh|withholding/.test(column) && !/%|rate|percent/.test(column)) indexes.push(index);
     return indexes;
   }, []);
   const netIndex = indexFor(/net/);
@@ -462,7 +462,7 @@ function ocrWordsToLines(result) {
     group.words.sort((a, b) => a.x0 - b.x0 || a.index - b.index);
     let line = "";
     let previousEnd = null;
-    const threshold = Math.max(18, group.height * 1.5);
+    const threshold = Math.max(12, group.height * 0.75);
     for (const word of group.words) {
       if (previousEnd !== null) {
         const gap = word.x0 - previousEnd;
