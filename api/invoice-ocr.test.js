@@ -208,6 +208,25 @@ describe("invoice OCR text parsing", () => {
     expect(result.rows[0].expiryDate).toBe("2027-12-31");
   });
 
+  test("extracts labeled invoice payable totals without confusing line net amounts", () => {
+    const grandTotal = parseInvoiceText([
+      "Supplier Name: Crescent Distributors",
+      "Invoice No: CR-104",
+      "Currency: PKR",
+      "Item | Description | Qty | Rate | Net Amount",
+      "1 | Paracetamol 500mg | 2 | 10 | 20",
+      "Grand Total: 1,234.50"
+    ].join("\n"));
+    expect(grandTotal.fields.invoiceTotal).toBe(1234.5);
+
+    const netPayable = parseInvoiceText([
+      "Supplier Name: Ahsan Traders",
+      "Invoice No: AH-22",
+      "Net Payable PKR 485.75"
+    ].join("\n"));
+    expect(netPayable.fields.invoiceTotal).toBe(485.75);
+  });
+
   test("extracts supplier identifiers and editable product, price, batch and expiry fields", () => {
     const result = parseInvoiceText([
       "ABC PHARMA DISTRIBUTORS",
