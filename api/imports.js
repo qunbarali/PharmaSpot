@@ -98,10 +98,14 @@ function sourceFileCandidates(files) {
 
 function normalizeSourceFiles(files) {
   const topLevel = Array.isArray(files) ? files : [];
+  const hasNestedMetadata = topLevel.some(file =>
+    Array.isArray(file && file.extractedDocuments) || Array.isArray(file && file.extractedImages)
+  );
   const nestedCount = topLevel.reduce((count, file) => count +
     (Array.isArray(file && file.extractedDocuments) ? file.extractedDocuments.length :
       Array.isArray(file && file.extractedImages) ? file.extractedImages.length : 0), 0);
-  if (topLevel.length > 20 || nestedCount > 200) return [];
+  if ((hasNestedMetadata && (topLevel.length > 20 || nestedCount > 200)) ||
+      (!hasNestedMetadata && topLevel.length > 220)) return [];
   return sourceFileCandidates(files).map(file => {
     const storedName = String(file && file.storedName || "");
     if (!/^[a-f0-9-]{36}\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(storedName)) return null;
