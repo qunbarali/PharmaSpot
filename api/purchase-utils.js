@@ -13,10 +13,13 @@ function calculatePurchaseTotal(items) {
   return (Array.isArray(items) ? items : []).reduce((sum, item) => {
     const quantity = Number(item && (item.paidQuantity == null ? item.quantity : item.paidQuantity));
     const price = Number(item && item.purchasePrice);
-    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0) {
-      throw new Error("Purchase lines contain an invalid paid quantity or purchase price.");
+    const rawLineTotal = item && (item.lineTotal == null || item.lineTotal === "" ? item.netAmount : item.lineTotal);
+    const lineTotal = rawLineTotal == null || rawLineTotal === "" ? null : Number(rawLineTotal);
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0 ||
+        (lineTotal !== null && (!Number.isFinite(lineTotal) || lineTotal < 0))) {
+      throw new Error("Purchase lines contain an invalid paid quantity, purchase price or reviewed line total.");
     }
-    return sum + quantity * price;
+    return sum + (lineTotal === null ? quantity * price : lineTotal);
   }, 0);
 }
 
@@ -177,6 +180,23 @@ function validatePurchaseDraft(input) {
     const salePrice = Number(item.salePrice);
     const bonusQuantity = Number(item.bonusQuantity == null || item.bonusQuantity === "" ? 0 : item.bonusQuantity);
     const expiryDate = normalizeExpiryDate(item.expiryDate);
+    const optionalAmount = key => {
+      const raw = item[key];
+      if (raw == null || raw === "") return null;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) throw new Error("Invoice line " + key + " must be a non-negative number.");
+      return value;
+    };
+    const grossAmount = optionalAmount("grossAmount");
+    const discountPercent = optionalAmount("discountPercent");
+    const discountAmount = optionalAmount("discountAmount");
+    const salesTaxPercent = optionalAmount("salesTaxPercent");
+    const salesTaxAmount = optionalAmount("salesTaxAmount");
+    const additionalTaxAmount = optionalAmount("additionalTaxAmount");
+    const netAmount = optionalAmount("netAmount");
+    const lineTotal = optionalAmount("lineTotal") ?? netAmount;
+    if (discountPercent !== null && discountPercent > 100) throw new Error("Invoice line discount percentage cannot exceed 100.");
+    if (salesTaxPercent !== null && salesTaxPercent > 100) throw new Error("Invoice line sales-tax percentage cannot exceed 100.");
     if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(purchasePrice) || purchasePrice < 0) {
       throw new Error("Every invoice line needs a positive paid quantity and a valid purchase price.");
     }
@@ -195,6 +215,16 @@ function validatePurchaseDraft(input) {
       purchasePrice,
       bonusQuantity,
       expiryDate,
+      itemCode: String(item.itemCode || "").trim().slice(0, 80),
+      packing: String(item.packing || "").trim().slice(0, 80),
+      grossAmount,
+      discountPercent,
+      discountAmount,
+      salesTaxPercent,
+      salesTaxAmount,
+      additionalTaxAmount,
+      netAmount,
+      lineTotal,
       sourceDescription: String(item.sourceDescription || item.productName || item.description || "").trim().slice(0, 160)
     };
   });
