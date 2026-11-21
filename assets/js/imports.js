@@ -532,7 +532,10 @@ function loadPurchaseImportHistory() {
     (records || []).filter(record => ["posted", "reversed", "reversing", "reversal_needs_reconciliation"].includes(record.status) && record.type !== "purchase_draft").forEach(record => {
       const item = $('<div class="list-group-item"></div>');
       item.append($('<strong></strong>').text(record.supplier + " — invoice " + record.invoiceNo + " — " + record.status));
-      item.append($('<p class="small text-muted"></p>').text(new Date(record.createdAt).toLocaleString() + " | " + (record.items || []).length + " line(s)"));
+      item.append($('<p class="small text-muted"></p>').text(
+        new Date(record.createdAt).toLocaleString() + " | " + (record.items || []).length + " line(s) | invoice total " +
+        (record.invoiceTotal == null ? "not recorded" : Number(record.invoiceTotal).toFixed(2) + " " + (record.currency || ""))
+      ));
       const reverse = $('<button class="btn btn-warning btn-xs" type="button">Reverse purchase</button>');
       reverse.prop("disabled", record.status !== "posted");
       if (record.status === "reversed") reverse.text("Already reversed");
