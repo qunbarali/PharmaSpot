@@ -700,27 +700,16 @@ $(function () {
       }),
       success: result => {
         if (!result.draftId) return window.alert("Purchase draft was not created.");
-        if (!window.confirm("Review the supplier, invoice and all batch details. Approve this draft and post stock now?")) {
-          window.alert("Purchase saved as pending approval. No stock was changed.");
-          return;
-        }
-        $.ajax({
-          url: importApi + "imports/approve-purchase/" + encodeURIComponent(result.draftId),
-          method: "POST",
-          contentType: "application/json",
-          data: JSON.stringify({ confirm: true, reviewed: true, reviewedRevision: Number(result.revision || 0) }),
-          success: posted => {
-            window.alert(posted.success ? "Purchase approved and posted. " + posted.appliedRows + " product line(s) added to stock." : "Purchase approval did not complete.");
-            $("#purchaseImportTable tbody").empty();
-            $("#importSupplier,#importSupplierIdentifier,#importInvoiceNo,#importInvoiceDate,#importInvoiceTotal").val("");
-            $("#invoiceOcrResults").empty();
-            stagedInvoiceFiles = [];
-            $("#importExchangeRateDate").val(new Date().toISOString().slice(0, 10));
-            $("#importExchangeRateDate").data("user-selected", false);
-            loadImportProducts(() => addPurchaseRow());
-          },
-          error: xhr => window.alert(xhr.responseJSON?.error || "Could not approve purchase. Draft remains available for review.")
-        });
+        window.alert("Purchase saved as pending approval (draft " + result.draftId + "). Inventory has not changed. Open Pending Purchase Approvals to inspect the original invoice, correct every field and explicitly approve stock posting.");
+        $("#purchaseImportTable tbody").empty();
+        $("#importSupplier,#importSupplierIdentifier,#importInvoiceNo,#importInvoiceDate,#importInvoiceTotal").val("");
+        $("#invoiceOcrResults").empty();
+        stagedInvoiceFiles = [];
+        $("#importExchangeRateDate").val(new Date().toISOString().slice(0, 10));
+        $("#importExchangeRateDate").data("user-selected", false);
+        loadImportProducts(() => addPurchaseRow());
+        loadPendingPurchaseDrafts();
+        loadAdminAuditTrail();
       },
       error: xhr => window.alert(xhr.responseJSON?.error || "Could not post this purchase.")
     });
