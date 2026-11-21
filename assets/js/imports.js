@@ -289,26 +289,160 @@ function previewReconciliation() {
       $("#commitReconciliation").prop("disabled", !result.preview || !result.preview.length);
     }).fail(xhr => $("#reconciliationPreview").text(xhr.responseJSON?.error || "Could not preview stock counts."));
 }
+function makeDraftField(label, className, value, type = "text", step) {
+  const wrapper = $('<div class="form-group"></div>');
+  wrapper.append($("<label></label>").text(label));
+  const input = $('<input class="form-control">').addClass(className).attr("type", type).val(value == null ? "" : value);
+  if (step) input.attr("step", step);
+  wrapper.append(input);
+  return wrapper;
+}
+
+function makeDraftLine(item = {}) {
+  const row = $("<tr></tr>");
+  const description = $('<input class="form-control input-sm draft-description" type="text">').val(item.sourceDescription || item.productName || item.description || "");
+  const product = $('<select class="form-control input-sm draft-product"></select>').html(productOptions(item.productId));
+  const quantity = $('<input class="form-control input-sm draft-quantity" type="number" min="0.001" step="any">').val(item.quantity ?? "");
+  const bonus = $('<input class="form-control input-sm draft-bonus" type="number" min="0" step="any">').val(item.bonusQuantity ?? 0);
+  const purchase = $('<input class="form-control input-sm draft-purchase" type="number" min="0" step="any">').val(item.purchasePrice ?? "");
+  const sale = $('<input class="form-control input-sm draft-sale" type="number" min="0" step="any">').val(item.salePrice ?? "");
+  const batch = $('<input class="form-control input-sm draft-batch" type="text">').val(item.batchNumber || "");
+  const expiry = $('<input class="form-control input-sm draft-expiry" type="date">').val(item.expiryDate || "");
+  const remove = $('<button class="btn btn-danger btn-xs" type="button" title="Remove invoice line">×</button>');
+  remove.on("click", () => row.remove());
+  row.append(
+    $("<td></td>").append(description), $("<td></td>").append(product),
+    $("<td></td>").append(quantity), $("<td></td>").append(bonus),
+    $("<td></td>").append(purchase), $("<td></td>").append(sale),
+    $("<td></td>").append(batch), $("<td></td>").append(expiry),
+    $("<td></td>").append(remove)
+  );
+  return row;
+}
+
+function buildPendingPurchaseEditor(draft, refresh) {
+  const card = $('<div class="list-group-item"></div>');
+  card.append($("<strong></strong>").text(draft.supplier + " — invoice " + draft.invoiceNo));
+  card.append($('<p class="small text-muted"></p>').text(
+    (draft.items || []).length + " line(s) | " + new Date(draft.createdAt).toLocaleString() +
+    " | " + draft.status + " | revision " + Number(draft.revision || 0)
+  ));
+
+  const toggle = $('<button class="btn btn-default btn-xs" type="button">Review / edit all fields</button>');
+  const editor = $('<div class="m-t-15"></div>').hide();
+  toggle.on("click", () => {
+    editor.toggle();
+    toggle.text(editor.is(":visible") ? "Hide draft details" : "Review / edit all fields");
+  });
+
+  const metadata = $('<div class="row"></div>');
+  const supplierField = makeDraftField("Supplier / distributor", "draft-supplier", draft.supplier);
+  const identifierField = makeDraftField("Supplier code / NTN", "draft-supplier-identifier", draft.supplierIdentifier);
+  const invoiceField = makeDraftField("Invoice number", "draft-invoice-no", draft.invoiceNo);
+  const invoiceDateField = makeDraftField("Invoice date", "draft-invoice-date", draft.invoiceDate, "date");
+  const rateField = makeDraftField("Exchange rate (1 invoice unit = store units)", "draft-exchange-rate", draft.exchangeRate, "number", "any");
+  const rateDateField = makeDraftField("Exchange-rate date", "draft-exchange-rate-date", draft.exchangeRateDate, "date");
+  [supplierField, identifierField, invoiceField, invoiceDateField, rateField, rateDateField].forEach(field => {
+    field.addClass("col-sm-4");
+    metadata.append(field);
+  });
+  const currencyField = $('<div class="form-group col-sm-4"><label>Invoice currency</label><select class="form-control draft-currency"><option>PKR</option><option>INR</option><option>USD</option></select></div>');
+  currencyField.find("select").val(draft.currency || "PKR");
+  const baseField = $('<div class="form-group col-sm-4"><label>Store base currency (fixed)</label><input class="form-control" type="text" disabled></div>');
+  baseField.find("input").val(draft.baseCurrency || baseCurrency);
+  metadata.append(currencyField, baseField);
+
+  const table = $('<div class="table-responsive"><table class="table table-bordered table-condensed"><thead><tr><th>Invoice description</th><th>Product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table></div>');
+  const body = table.find("tbody");
+  (draft.items || []).forEach(item => body.append(makeDraftLine(item)));
+  const addLine = $('<button class="btn btn-default btn-xs" type="button">Add invoice line</button>');
+  addLine.on("click", () => body.append(makeDraftLine()));
+  const save = $('<button class="btn btn-primary btn-sm pull-right" type="button">Save corrections (no stock change)</button>');
+  const review = $('<label class="checkbox-inline m-t-10"><input type="checkbox" class="draft-reviewed"> I reviewed the supplier, invoice, currency, product mapping, every quantity and price, batch number and expiry against the original document.</label>');
+  const approve = $('<button class="btn btn-success btn-sm m-t-10" type="button" disabled>Approve reviewed draft and post stock</button>');
+  review.find("input").on("change", function () { approve.prop("disabled", !this.checked); });
+
+  save.on("click", () => {
+    const items = [];
+    body.find("tr").each(function () {
+      const row = $(this);
+      items.push({
+        sourceDescription: row.find(".draft-description").val(),
+        productId: row.find(".draft-product").val(),
+        quantity: row.find(".draft-quantity").val(),
+        bonusQuantity: row.find(".draft-bonus").val(),
+        purchasePrice: row.find(".draft-purchase").val(),
+        salePrice: row.find(".draft-sale").val(),
+        batchNumber: row.find(".draft-batch").val(),
+        expiryDate: row.find(".draft-expiry").val()
+      });
+    });
+    const payload = {
+      supplier: editor.find(".draft-supplier").val(),
+      supplierIdentifier: editor.find(".draft-supplier-identifier").val(),
+      invoiceNo: editor.find(".draft-invoice-no").val(),
+      invoiceDate: editor.find(".draft-invoice-date").val(),
+      currency: editor.find(".draft-currency").val(),
+      baseCurrency: draft.baseCurrency || baseCurrency,
+      exchangeRate: editor.find(".draft-exchange-rate").val(),
+      exchangeRateDate: editor.find(".draft-exchange-rate-date").val(),
+      items
+    };
+    if (!window.confirm("Save these corrections to the pending draft? Inventory will not change.")) return;
+    save.prop("disabled", true);
+    $.ajax({
+      url: importApi + "imports/update-purchase-draft/" + encodeURIComponent(draft._id),
+      method: "POST",
+      contentType: "application/json",
+      data: JSON.stringify(payload)
+    }).done(result => {
+      window.alert(result.warning || result.message || "Draft corrections saved. No stock was changed.");
+      refresh();
+      loadAdminAuditTrail();
+    }).fail(xhr => window.alert(xhr.responseJSON?.error || "Could not save draft corrections. No stock was posted."))
+      .always(() => save.prop("disabled", false));
+  });
+
+  approve.on("click", () => {
+    if (!review.find("input").prop("checked")) return;
+    if (!window.confirm("I have reviewed every field against the original invoice. Approve invoice " + draft.invoiceNo + " and post its stock now?")) return;
+    approve.prop("disabled", true);
+    $.ajax({
+      url: importApi + "imports/approve-purchase/" + encodeURIComponent(draft._id),
+      method: "POST",
+      contentType: "application/json",
+      data: JSON.stringify({ confirm: true, reviewed: true })
+    }).done(result => {
+      window.alert(result.warning || ("Purchase approved. " + result.appliedRows + " line(s) posted."));
+      loadPendingPurchaseDrafts();
+      loadPurchaseImportHistory();
+      loadDistributorAccounts();
+      loadAdminAuditTrail();
+    }).fail(xhr => {
+      window.alert(xhr.responseJSON?.error || "Could not approve this purchase.");
+      approve.prop("disabled", !review.find("input").prop("checked"));
+    });
+  });
+
+  editor.append(
+    $('<p class="text-warning"></p>').text("Review and correct every field below. OCR values are suggestions only. Saving corrections keeps the draft pending and does not change inventory."),
+    metadata, table, addLine, $("<div class='clearfix'></div>"), save, $("<div class='clearfix'></div>"), review,
+    $("<div class='clearfix'></div>"), approve
+  );
+  card.append(toggle, editor);
+  return card;
+}
+
 function loadPendingPurchaseDrafts() {
   $.getJSON(importApi + "imports/pending-purchases").done(drafts => {
-    const list = $('<div class="list-group"></div>');
-    (drafts || []).forEach(draft => {
-      const item = $('<div class="list-group-item"></div>');
-      item.append($('<strong></strong>').text(draft.supplier + " — invoice " + draft.invoiceNo));
-      item.append($('<p class="small text-muted"></p>').text((draft.items || []).length + " line(s) | " + new Date(draft.createdAt).toLocaleString() + " | " + draft.status));
-      const approve = $('<button class="btn btn-success btn-xs" type="button">Approve and post</button>');
-      if (draft.status === "approval_needs_reconciliation") approve.prop("disabled", true).text("Manual reconciliation required");
-      approve.on("click", () => {
-        if (draft.status !== "pending_approval") return;
-        if (!window.confirm("Approve invoice " + draft.invoiceNo + " from " + draft.supplier + " and update stock and supplier balance?")) return;
-        $.ajax({ url: importApi + "imports/approve-purchase/" + encodeURIComponent(draft._id), method: "POST", contentType: "application/json", data: JSON.stringify({ confirm: true }) })
-          .done(result => { window.alert("Purchase approved. " + result.appliedRows + " line(s) posted."); loadPendingPurchaseDrafts(); loadPurchaseImportHistory(); loadDistributorAccounts(); loadAdminAuditTrail(); })
-          .fail(xhr => window.alert(xhr.responseJSON?.error || "Could not approve this purchase."));
-      });
-      item.append(approve); list.append(item);
-    });
-    if (!list.children().length) list.text("No purchase drafts awaiting approval.");
-    $("#pendingPurchaseDrafts").empty().append(list);
+    const render = () => {
+      const list = $('<div class="list-group"></div>');
+      (drafts || []).forEach(draft => list.append(buildPendingPurchaseEditor(draft, loadPendingPurchaseDrafts)));
+      if (!list.children().length) list.text("No purchase drafts awaiting approval.");
+      $("#pendingPurchaseDrafts").empty().append(list);
+    };
+    if ((drafts || []).length && !importProducts.length) return loadImportProducts(render);
+    render();
   }).fail(xhr => $("#pendingPurchaseDrafts").text(xhr.status === 403 ? "Administrator account required to view pending approvals." : "Could not load pending purchase approvals."));
 }
 function loadPurchaseImportHistory() {
@@ -480,7 +614,7 @@ $(function () {
           url: importApi + "imports/approve-purchase/" + encodeURIComponent(result.draftId),
           method: "POST",
           contentType: "application/json",
-          data: JSON.stringify({ confirm: true }),
+          data: JSON.stringify({ confirm: true, reviewed: true }),
           success: posted => {
             window.alert(posted.success ? "Purchase approved and posted. " + posted.appliedRows + " product line(s) added to stock." : "Purchase approval did not complete.");
             $("#purchaseImportTable tbody").empty();
