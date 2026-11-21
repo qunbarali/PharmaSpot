@@ -179,6 +179,13 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const invalidPdfArchive = await createZipBuffer([{ name: "supplier/broken.pdf", content: Buffer.from("not a PDF") }]);
   expect((await uploadRequest("broken-invoice.zip", invalidPdfArchive)).status).toBe(400);
 
+  const beforeArchiveLimit = fs.readdirSync(importRoot).length;
+  const oversizedDocumentCountArchive = await createZipBuffer(Array.from({ length: 201 }, (_, index) => ({
+    name: "documents/invoice-" + index + ".pdf", content: pdfFixture
+  })));
+  expect((await uploadRequest("too-many-invoices.zip", oversizedDocumentCountArchive)).status).toBe(400);
+  expect(fs.readdirSync(importRoot)).toHaveLength(beforeArchiveLimit);
+
   const deniedDraft = await request("POST", "/imports/commit-purchase", {
     supplier: "Demo Distributor", invoiceNo: "DENIED", currency: "PKR", items: []
   }, null);
@@ -206,6 +213,24 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
       expiryDate: "2030-12-31"
     }]
   });
+
+  const zipSourceDraft = await request("POST", "/imports/commit-purchase", {
+    ...makePurchase("INV-ZIP-SOURCE"), sourceFiles: [uploadedArchive]
+  });
+  expect(zipSourceDraft.status).toBe(201);
+  const zipPendingDrafts = await request("GET", "/imports/pending-purchases");
+  const savedZipDraft = zipPendingDrafts.data.find(draft => draft._id === zipSourceDraft.data.draftId);
+  expect(savedZipDraft.sourceFiles).toHaveLength(2);
+  expect(savedZipDraft.sourceFiles.map(file => file.sha256)).toContain(extractedPdf.sha256);
+
+  const standaloneInvoiceUpload = await uploadRequest("invoice-page-1.pdf", pdfFixture);
+  expect(standaloneInvoiceUpload.status).toBe(200);
+  const standaloneInvoiceFile = standaloneInvoiceUpload.data.files[0];
+  const duplicateExtractedSource = await request("POST", "/imports/commit-purchase", {
+    ...makePurchase("INV-ZIP-SOURCE-DUP"), sourceFiles: [standaloneInvoiceFile]
+  });
+  expect(duplicateExtractedSource.status).toBe(409);
+  expect(duplicateExtractedSource.data.error).toMatch(/original invoice file has already been used/i);
 
   const sourceFileName = "11111111-1111-4111-8111-111111111111.pdf";
   fs.writeFileSync(path.join(importRoot, sourceFileName), Buffer.from("%PDF-1.4\\nsource invoice fixture\\n"));
