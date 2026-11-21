@@ -411,11 +411,11 @@ const postPurchaseHandler = (req, res) => {
             reference: invoiceNo, importId: record._id, note: "Supplier invoice stock receipt",
             eventKey: "purchase:" + record._id
           }))
-          .then(() => res.json({ success: true, importId: record._id, appliedRows: applied.length, supplierLedger: "recorded" }))
+          .then(() => res.json({ success: true, importId: record._id, appliedRows: applied.length, invoiceTotal, currency, supplierLedger: "recorded" }))
           .catch((ledgerError) => {
             console.error("Supplier ledger write failed for import", record._id, ledgerError);
             importsDB.update({ _id: record._id }, { $set: { supplierLedgerStatus: "needs_repair" } }, {}, () => {});
-            res.status(207).json({ success: true, importId: record._id, appliedRows: applied.length, supplierLedger: "needs_repair", warning: "Stock was posted, but distributor balance could not be updated. Review import history before paying this supplier." });
+            res.status(207).json({ success: true, importId: record._id, appliedRows: applied.length, invoiceTotal, currency, supplierLedger: "needs_repair", warning: "Stock was posted, but distributor balance could not be updated. Review import history before paying this supplier." });
           });
       });
     });
@@ -465,6 +465,7 @@ app.post("/commit-purchase", async (req, res) => {
     writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, {
       supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate,
       lineCount: items.length,
+      invoiceTotal: calculatePurchaseTotal(items),
       sourceFiles: sourceFiles.map(file => ({ originalName: file.originalName, size: file.size, sha256: file.sha256 }))
     })
       .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", revision: 0, message: "Purchase saved for approval. Inventory has not changed." }))
@@ -547,6 +548,7 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
         exchangeRate: validated.exchangeRate,
         exchangeRateDate: validated.exchangeRateDate,
         lineCount: validated.items.length,
+        invoiceTotal: calculatePurchaseTotal(validated.items),
         revision: changes.revision
       });
     } catch (auditError) {
@@ -627,7 +629,7 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
             );
           };
           if (payload && payload.success) {
-            writeAudit(req, "purchase_approved_and_posted", "purchase_draft", draft._id, { importId: payload.importId, appliedRows: payload.appliedRows })
+            writeAudit(req, "purchase_approved_and_posted", "purchase_draft", draft._id, { importId: payload.importId, appliedRows: payload.appliedRows, invoiceTotal: payload.invoiceTotal, currency: draft.currency, baseCurrency: draft.baseCurrency, exchangeRate: draft.exchangeRate, exchangeRateDate: draft.exchangeRateDate })
               .then(() => persistResult(finalStatus, payload))
               .catch((auditError) => {
                 console.error("Purchase posted but approval audit failed", draft._id, auditError);
@@ -696,7 +698,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
           importsDB.update({ _id: record._id, status: "reversing" }, { $set: { status: "reversal_needs_reconciliation", reversalLedgerId: reversal && reversal.eventKey, reversalFailure: "Stock and distributor ledger were reversed, but purchase history status could not be saved.", reversalFailedAt: new Date().toISOString() } }, {}, () => {});
           return res.status(500).json({ error: "Stock and distributor ledger were reversed but purchase history needs manual reconciliation. Do not retry this reversal.", reversalLedgerId: reversal && reversal.eventKey });
         }
-        writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), adjustedProducts: new Set(changes.map(change => String(change.productId))).size })
+        writeAudit(req, "purchase_reversed", "purchase_import", record._id, { reason: String(req.body.reason).slice(0, 300), invoiceTotal: record.invoiceTotal, currency: record.currency, adjustedProducts: new Set(changes.map(change => String(change.productId))).size })
           .then(() => res.json({ success: true, reversedImportId: record._id, adjustedProducts: new Set(changes.map(change => String(change.productId))).size }))
           .catch(() => res.status(207).json({ success: true, reversedImportId: record._id, adjustedProducts: changes.length, warning: "Reversal completed but audit logging failed. Contact an administrator." }));
       });
