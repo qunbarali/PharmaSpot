@@ -498,6 +498,11 @@ function parseInvoiceText(raw) {
     new RegExp("(?:invoice\\s*date|bill\\s*date|(?<!expiry\\s)(?<!exp\\s)(?<!due\\s)\\bdate\\b)\\s*[:#-]?\\s*(" + DATE_SOURCE + ")", "i")
   ]);
   const invoiceDate = normalizeDate(invoiceDateRaw) || invoiceDateRaw;
+  const invoiceTotalRaw = getLabeledValue(text, [
+    /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|amount\s*due|balance\s*payable)\s*[:#=-]\s*([\d,]+(?:\.\d{1,4})?)/i,
+    /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|amount\s*due|balance\s*payable)\s+(?:PKR|INR|USD|Rs\.?|₹|\$)?\s*([\d,]+(?:\.\d{1,4})?)/i
+  ]);
+  const invoiceTotal = parseNumber(invoiceTotalRaw);
   const explicitCurrency = getLabeledValue(text, [
     /(?:invoice\s*)?currency\s*[:#=-]\s*(PKR|INR|USD|Rs\.?|₹|\$)/i
   ]);
@@ -530,7 +535,7 @@ function parseInvoiceText(raw) {
 
   return {
     text,
-    fields: { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency },
+    fields: { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, invoiceTotal },
     rows,
     reviewRequired: true,
     warning: "OCR output is an unapproved draft. Confirm supplier identifiers, invoice number/date/currency, product mapping, every quantity and price, batch number and expiry date against the original document before saving or approving."
