@@ -308,7 +308,7 @@ function makeDraftLine(item = {}) {
   const sale = $('<input class="form-control input-sm draft-sale" type="number" min="0" step="any">').val(item.salePrice ?? "");
   const batch = $('<input class="form-control input-sm draft-batch" type="text">').val(item.batchNumber || "");
   const expiry = $('<input class="form-control input-sm draft-expiry" type="date">').val(item.expiryDate || "");
-  const remove = $('<button class="btn btn-danger btn-xs" type="button" title="Remove invoice line">×</button>');
+  const remove = $('<button class="btn btn-danger btn-xs draft-remove-line" type="button" title="Remove invoice line">×</button>');
   remove.on("click", () => row.remove());
   row.append(
     $("<td></td>").append(description), $("<td></td>").append(product),
@@ -359,11 +359,15 @@ function buildPendingPurchaseEditor(draft, refresh) {
   const table = $('<div class="table-responsive"><table class="table table-bordered table-condensed"><thead><tr><th>Invoice description</th><th>Product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table></div>');
   const body = table.find("tbody");
   (draft.items || []).forEach(item => body.append(makeDraftLine(item)));
-  const addLine = $('<button class="btn btn-default btn-xs" type="button">Add invoice line</button>');
+  const addLine = $('<button class="btn btn-default btn-xs draft-add-line" type="button">Add invoice line</button>');
   addLine.on("click", () => body.append(makeDraftLine()));
   const save = $('<button class="btn btn-primary btn-sm pull-right" type="button">Save corrections (no stock change)</button>');
   const review = $('<label class="checkbox-inline m-t-10"><input type="checkbox" class="draft-reviewed"> I reviewed the supplier, invoice, currency, product mapping, every quantity and price, batch number and expiry against the original document.</label>');
   const approve = $('<button class="btn btn-success btn-sm m-t-10" type="button" disabled>Approve reviewed draft and post stock</button>');
+  const resetReview = () => { review.find("input").prop("checked", false); approve.prop("disabled", true); };
+  editor.on("input change", "input:not(.draft-reviewed), select", resetReview);
+  addLine.on("click", resetReview);
+  body.on("click", ".draft-remove-line", resetReview);
   review.find("input").on("change", function () { approve.prop("disabled", !this.checked); });
 
   save.on("click", () => {
@@ -388,6 +392,7 @@ function buildPendingPurchaseEditor(draft, refresh) {
       invoiceDate: editor.find(".draft-invoice-date").val(),
       currency: editor.find(".draft-currency").val(),
       baseCurrency: draft.baseCurrency || baseCurrency,
+      expectedRevision: Number(draft.revision || 0),
       exchangeRate: editor.find(".draft-exchange-rate").val(),
       exchangeRateDate: editor.find(".draft-exchange-rate-date").val(),
       items
@@ -415,7 +420,7 @@ function buildPendingPurchaseEditor(draft, refresh) {
       url: importApi + "imports/approve-purchase/" + encodeURIComponent(draft._id),
       method: "POST",
       contentType: "application/json",
-      data: JSON.stringify({ confirm: true, reviewed: true })
+      data: JSON.stringify({ confirm: true, reviewed: true, reviewedRevision: Number(draft.revision || 0) })
     }).done(result => {
       window.alert(result.warning || ("Purchase approved. " + result.appliedRows + " line(s) posted."));
       loadPendingPurchaseDrafts();
@@ -618,7 +623,7 @@ $(function () {
           url: importApi + "imports/approve-purchase/" + encodeURIComponent(result.draftId),
           method: "POST",
           contentType: "application/json",
-          data: JSON.stringify({ confirm: true, reviewed: true }),
+          data: JSON.stringify({ confirm: true, reviewed: true, reviewedRevision: Number(result.revision || 0) }),
           success: posted => {
             window.alert(posted.success ? "Purchase approved and posted. " + posted.appliedRows + " product line(s) added to stock." : "Purchase approval did not complete.");
             $("#purchaseImportTable tbody").empty();
