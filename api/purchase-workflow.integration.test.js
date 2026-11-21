@@ -215,6 +215,11 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   });
   expect(firstDraft.status).toBe(201);
   expect(firstDraft.data.status).toBe("pending_approval");
+  expect(firstDraft.data.revision).toBe(0);
+  expect((await request("GET", "/imports/file/" + sourceFileName, undefined, null)).status).toBe(403);
+  const originalInvoiceDownload = await request("GET", "/imports/file/" + sourceFileName);
+  expect(originalInvoiceDownload.status).toBe(200);
+  expect(String(originalInvoiceDownload.data)).toContain("%PDF-1.4");
   const duplicatePendingDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-001"));
   expect(duplicatePendingDraft.status).toBe(409);
   const duplicateSourceFile = await request("POST", "/imports/commit-purchase", {
