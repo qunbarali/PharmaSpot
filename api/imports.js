@@ -272,8 +272,13 @@ const postPurchaseHandler = (req, res) => {
   if (currency === baseCurrency && rate !== 1) return res.status(400).json({ error: "Exchange rate must be 1 when invoice and store currencies are the same." });
   const importKey = normalizeInvoiceKey(supplier, invoiceNo);
   let invoiceTotal;
-  try { invoiceTotal = calculatePurchaseTotal(rows); }
-  catch (error) { return res.status(400).json({ error: error.message }); }
+  try {
+    const rawInvoiceTotal = body.invoiceTotal;
+    invoiceTotal = rawInvoiceTotal == null || (typeof rawInvoiceTotal === "string" && !rawInvoiceTotal.trim())
+      ? calculatePurchaseTotal(rows)
+      : Number(rawInvoiceTotal);
+    if (!Number.isFinite(invoiceTotal) || invoiceTotal < 0) throw new Error("Invoice payable total must be a non-negative amount in the invoice currency.");
+  } catch (error) { return res.status(400).json({ error: error.message }); }
   const sourceFiles = normalizeSourceFiles(body.sourceFiles);
   const requestedSourceFiles = Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && file.storedName) : [];
   if (requestedSourceFiles.length && sourceFiles.length !== requestedSourceFiles.length) {
@@ -430,7 +435,7 @@ app.post("/commit-purchase", async (req, res) => {
   let validated;
   try { validated = validatePurchaseDraft(body); }
   catch (error) { return res.status(400).json({ error: error.message }); }
-  const { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate, items } = validated;
+  const { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate, invoiceTotal, items } = validated;
   const draftKey = normalizeInvoiceKey(supplier, invoiceNo);
   const sourceFiles = normalizeSourceFiles(body.sourceFiles);
   const requestedSourceFiles = Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && file.storedName) : [];
@@ -457,7 +462,7 @@ app.post("/commit-purchase", async (req, res) => {
   } catch (_) { return res.status(500).json({ error: "Could not check for duplicate supplier invoices." }); }
   importsDB.insert({
     type: "purchase_draft", status: "pending_approval", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
-    currency, baseCurrency, exchangeRate, exchangeRateDate, items, invoiceTotal: calculatePurchaseTotal(items), sourceFiles, revision: 0,
+    currency, baseCurrency, exchangeRate, exchangeRateDate, items, invoiceTotal, sourceFiles, revision: 0,
     createdAt: new Date().toISOString()
   }, (err, draft) => {
     if (err && err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
@@ -465,7 +470,7 @@ app.post("/commit-purchase", async (req, res) => {
     writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, {
       supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate,
       lineCount: items.length,
-      invoiceTotal: calculatePurchaseTotal(items),
+      invoiceTotal,
       sourceFiles: sourceFiles.map(file => ({ originalName: file.originalName, size: file.size, sha256: file.sha256 }))
     })
       .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", revision: 0, message: "Purchase saved for approval. Inventory has not changed." }))
@@ -516,7 +521,7 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
     const updatedAt = new Date().toISOString();
     const changes = {
       ...validated,
-      invoiceTotal: calculatePurchaseTotal(validated.items),
+      invoiceTotal: validated.invoiceTotal,
       draftKey,
       sourceFiles: draft.sourceFiles || [],
       updatedAt,
@@ -548,7 +553,7 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
         exchangeRate: validated.exchangeRate,
         exchangeRateDate: validated.exchangeRateDate,
         lineCount: validated.items.length,
-        invoiceTotal: calculatePurchaseTotal(validated.items),
+        invoiceTotal: validated.invoiceTotal,
         revision: changes.revision
       });
     } catch (auditError) {
