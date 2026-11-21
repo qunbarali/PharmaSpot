@@ -218,6 +218,12 @@ describe("invoice OCR text parsing", () => {
       "Grand Total: 1,234.50"
     ].join("\n"));
     expect(grandTotal.fields.invoiceTotal).toBe(1234.5);
+    const lineOnly = parseInvoiceText([
+      "Supplier Name: Crescent Distributors",
+      "Item | Description | Qty | Rate | Net Amount",
+      "1 | Paracetamol 500mg | 2 | 10 | 20"
+    ].join("\n"));
+    expect(lineOnly.fields.invoiceTotal).toBeNull();
 
     const netPayable = parseInvoiceText([
       "Supplier Name: Ahsan Traders",
