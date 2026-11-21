@@ -116,7 +116,8 @@ function runInvoiceOcr(files) {
           " | Supplier ID: " + (fields.supplierIdentifier || "Not detected") +
           " | Invoice: " + (fields.invoiceNo || "Not detected") +
           " | Date: " + (fields.invoiceDate || "Not detected") +
-          " | Currency: " + (fields.currency || "Not detected")
+          " | Currency: " + (fields.currency || "Not detected") +
+          " | Invoice total: " + (fields.invoiceTotal == null ? "Not detected" : fields.invoiceTotal)
         ));
         if (fields.supplier && !$("#importSupplier").val()) $("#importSupplier").val(fields.supplier);
         if (fields.supplierIdentifier && !$("#importSupplierIdentifier").val()) $("#importSupplierIdentifier").val(fields.supplierIdentifier);
@@ -129,6 +130,7 @@ function runInvoiceOcr(files) {
           $("#importCurrency").val(fields.currency);
           updateImportExchangeRate();
         }
+        if (fields.invoiceTotal != null && !$("#importInvoiceTotal").val()) $("#importInvoiceTotal").val(fields.invoiceTotal);
         if (result.rows && result.rows.length) {
           const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table>');
           result.rows.forEach(invoiceRow => {
@@ -390,7 +392,8 @@ function buildPendingPurchaseEditor(draft, refresh) {
   const invoiceDateField = makeDraftField("Invoice date", "draft-invoice-date", draft.invoiceDate, "date");
   const rateField = makeDraftField("Exchange rate (1 invoice unit = store units)", "draft-exchange-rate", draft.exchangeRate, "number", "any");
   const rateDateField = makeDraftField("Exchange-rate date", "draft-exchange-rate-date", draft.exchangeRateDate, "date");
-  [supplierField, identifierField, invoiceField, invoiceDateField, rateField, rateDateField].forEach(field => {
+  const invoiceTotalField = makeDraftField("Invoice payable total (invoice currency; blank = sum of line totals)", "draft-invoice-total", draft.invoiceTotal, "number", "any");
+  [supplierField, identifierField, invoiceField, invoiceDateField, rateField, rateDateField, invoiceTotalField].forEach(field => {
     field.addClass("col-sm-4");
     metadata.append(field);
   });
@@ -448,6 +451,7 @@ function buildPendingPurchaseEditor(draft, refresh) {
       expectedRevision: Number(draft.revision || 0),
       exchangeRate: editor.find(".draft-exchange-rate").val(),
       exchangeRateDate: editor.find(".draft-exchange-rate-date").val(),
+      invoiceTotal: editor.find(".draft-invoice-total").val(),
       items
     };
     if (!window.confirm("Save these corrections to the pending draft? Inventory will not change.")) return;
@@ -688,6 +692,7 @@ $(function () {
         sourceFiles: stagedInvoiceFiles,
         exchangeRate: $("#importExchangeRate").val(),
         exchangeRateDate: $("#importExchangeRateDate").val(),
+        invoiceTotal: $("#importInvoiceTotal").val(),
         items
       }),
       success: result => {
@@ -704,7 +709,7 @@ $(function () {
           success: posted => {
             window.alert(posted.success ? "Purchase approved and posted. " + posted.appliedRows + " product line(s) added to stock." : "Purchase approval did not complete.");
             $("#purchaseImportTable tbody").empty();
-            $("#importSupplier,#importSupplierIdentifier,#importInvoiceNo,#importInvoiceDate").val("");
+            $("#importSupplier,#importSupplierIdentifier,#importInvoiceNo,#importInvoiceDate,#importInvoiceTotal").val("");
             $("#invoiceOcrResults").empty();
             stagedInvoiceFiles = [];
             $("#importExchangeRateDate").val(new Date().toISOString().slice(0, 10));
