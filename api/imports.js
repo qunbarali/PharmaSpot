@@ -445,7 +445,11 @@ app.post("/commit-purchase", async (req, res) => {
       sourceFiles: sourceFiles.map(file => ({ originalName: file.originalName, size: file.size, sha256: file.sha256 }))
     })
       .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", revision: 0, message: "Purchase saved for approval. Inventory has not changed." }))
-      .catch(() => res.status(500).json({ error: "Purchase draft saved but audit record failed. Contact an administrator before approval." }));
+      .catch(() => {
+      importsDB.update({ _id: draft._id, status: "pending_approval" }, {
+        $set: { status: "audit_needs_review", auditWarning: "Draft audit creation failed; manual administrator review is required before any stock approval." }
+      }, {}, () => res.status(500).json({ error: "Purchase draft was saved but its audit record failed. It has been locked against approval for administrator review." }));
+    });
   });
 });
 
@@ -458,8 +462,9 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
         (error, document) => error ? reject(error) : resolve(document))
     );
     if (!draft) return res.status(404).json({ error: "Editable pending purchase draft not found. Posted or processing purchases cannot be edited." });
-    const expectedRevision = Number(req.body && req.body.expectedRevision);
-    if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== Number(draft.revision || 0)) {
+    const expectedRevisionRaw = req.body && req.body.expectedRevision;
+    const expectedRevision = Number(expectedRevisionRaw);
+    if (expectedRevisionRaw == null || expectedRevisionRaw === "" || !Number.isSafeInteger(expectedRevision) || expectedRevision !== Number(draft.revision || 0)) {
       return res.status(409).json({ error: "This draft has changed since it was loaded. Reload the latest version before saving corrections." });
     }
 
@@ -491,7 +496,8 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
       sourceFiles: draft.sourceFiles || [],
       updatedAt,
       updatedBy: admin.username,
-      revision: Number(draft.revision || 0) + 1
+      revision: Number(draft.revision || 0) + 1,
+      status: "updating"
     };
     const updateSelector = { _id: draft._id, type: "purchase_draft", status: "pending_approval" };
     updateSelector.revision = draft.revision == null ? { $exists: false } : draft.revision;
@@ -521,11 +527,25 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
       });
     } catch (auditError) {
       console.error("Purchase draft updated but audit logging failed", draft._id, auditError);
+      await new Promise(resolve => importsDB.update(
+        { _id: draft._id, status: "updating", revision: changes.revision },
+        { $set: { status: "audit_needs_review", auditWarning: "Draft correction audit logging failed; manual administrator review is required before approval." } },
+        {}, () => resolve()
+      ));
       return res.status(207).json({
-        success: true, draftId: draft._id, status: "pending_approval", revision: changes.revision,
-        warning: "Corrections were saved, but audit logging failed. Do not approve until an administrator checks the audit trail."
+        success: true, draftId: draft._id, status: "audit_needs_review", revision: changes.revision,
+        warning: "Corrections were saved, but audit logging failed. The draft is locked against approval pending administrator review."
       });
     }
+    const finalized = await new Promise((resolve, reject) => importsDB.update(
+      { _id: draft._id, status: "updating", revision: changes.revision },
+      { $set: { status: "pending_approval" } }, {},
+      (error, count) => error ? reject(error) : resolve(count)
+    ));
+    if (!finalized) return res.status(207).json({
+      success: true, draftId: draft._id, status: "updating", revision: changes.revision,
+      warning: "Corrections were audited but the draft could not be unlocked. Administrator review is required before approval."
+    });
     return res.json({ success: true, draftId: draft._id, status: "pending_approval", revision: changes.revision, message: "Draft corrections saved. Inventory has not changed." });
   } catch (error) {
     if (error && error.errorType === "uniqueViolated") return res.status(409).json({ error: "Another pending purchase already uses this supplier and invoice number. The draft was not changed." });
@@ -538,7 +558,7 @@ app.get("/pending-purchases", async (req, res) => {
   try {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required." });
-    importsDB.find({ type: "purchase_draft", status: { $in: ["pending_approval", "approval_needs_reconciliation"] } }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
+    importsDB.find({ type: "purchase_draft", status: { $in: ["pending_approval", "approval_needs_reconciliation", "updating", "audit_needs_review"] } }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
       if (err) return res.status(500).json({ error: "Could not load pending purchases." });
       res.json(drafts || []);
     });
@@ -553,8 +573,11 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
   importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" }, (err, draft) => {
     if (err) return res.status(500).json({ error: "Could not load purchase draft." });
     if (!draft) return res.status(404).json({ error: "Pending purchase draft not found or already processed." });
-    if (Number(req.body.reviewedRevision) !== Number(draft.revision || 0)) return res.status(409).json({ error: "This draft has changed since it was reviewed. Reload it and review every field again before approval." });
-    importsDB.update({ _id: draft._id, status: "pending_approval" }, { $set: { status: "approving", approvedAt: new Date().toISOString() } }, {}, (updateError, count) => {
+    const reviewedRevisionRaw = req.body.reviewedRevision;
+    if (reviewedRevisionRaw == null || reviewedRevisionRaw === "" || Number(reviewedRevisionRaw) !== Number(draft.revision || 0)) return res.status(409).json({ error: "This draft has changed since it was reviewed. Reload it and review every field again before approval." });
+    const approvalSelector = { _id: draft._id, status: "pending_approval" };
+    approvalSelector.revision = draft.revision == null ? { $exists: false } : draft.revision;
+    importsDB.update(approvalSelector, { $set: { status: "approving", approvedAt: new Date().toISOString() } }, {}, (updateError, count) => {
       if (updateError || !count) return res.status(409).json({ error: "This draft is already being processed." });
       const response = {
         status(code) { res.status(code); return this; },
