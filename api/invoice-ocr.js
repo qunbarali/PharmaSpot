@@ -499,7 +499,7 @@ function parseInvoiceText(raw) {
   ]);
   const invoiceDate = normalizeDate(invoiceDateRaw) || invoiceDateRaw;
   const invoiceTotalRaw = getLabeledValue(text, [
-    /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|amount\s*due|balance\s*payable)\s*[:#=-]\s*([\d,]+(?:\.\d{1,4})?)/i,
+    /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|amount\s*due|balance\s*payable)\s*[:#=-]\s*(?:PKR|INR|USD|Rs\.?|₹|\$)?\s*([\d,]+(?:\.\d{1,4})?)/i,
     /(?:grand\s*total|invoice\s*total|net\s*payable|total\s*payable|amount\s*due|balance\s*payable)\s+(?:PKR|INR|USD|Rs\.?|₹|\$)?\s*([\d,]+(?:\.\d{1,4})?)/i
   ]);
   const invoiceTotal = parseNumber(invoiceTotalRaw);
