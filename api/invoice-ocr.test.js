@@ -225,6 +225,9 @@ describe("invoice OCR text parsing", () => {
       "Net Payable PKR 485.75"
     ].join("\n"));
     expect(netPayable.fields.invoiceTotal).toBe(485.75);
+
+    const rupeeTotal = parseInvoiceText("Supplier Name: SDK Health Care\nInvoice No: SDK-9\nNet Payable: Rs. 2,050.00");
+    expect(rupeeTotal.fields.invoiceTotal).toBe(2050);
   });
 
   test("extracts supplier identifiers and editable product, price, batch and expiry fields", () => {
