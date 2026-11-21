@@ -917,6 +917,9 @@
                                 <div class="col-sm-3"><label>Rate: 1 invoice currency = X store currency</label><input id="importExchangeRate" class="form-control" type="number" min="0.000001" step="0.000001" value="1"></div>
                                 <div class="col-sm-3"><label>Exchange-rate date</label><input id="importExchangeRateDate" class="form-control" type="date"></div>
                             </div>
+                            <div class="row m-t-10">
+                                <div class="col-sm-4"><label>Invoice payable total (invoice currency; blank = sum of line totals)</label><input id="importInvoiceTotal" class="form-control" type="number" min="0" step="any"></div>
+                            </div>
                             <div class="table-responsive m-t-15">
                                 <table class="table table-bordered" id="purchaseImportTable">
                                     <thead><tr><th>Invoice description</th><th>Product match</th><th>Item code</th><th>Packing</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase price</th><th>Sale price</th><th>Gross</th><th>Discount %</th><th>Discount amount</th><th>Sales tax %</th><th>Sales tax amount</th><th>Additional tax</th><th>Net line total</th><th>Batch</th><th>Expiry (YYYY-MM-DD)</th><th></th></tr></thead>
