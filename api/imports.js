@@ -271,6 +271,9 @@ const postPurchaseHandler = (req, res) => {
   if (!["PKR", "INR", "USD"].includes(baseCurrency) || !Number.isFinite(rate) || rate <= 0) return res.status(400).json({ error: "A supported base currency and a positive exchange rate are required." });
   if (currency === baseCurrency && rate !== 1) return res.status(400).json({ error: "Exchange rate must be 1 when invoice and store currencies are the same." });
   const importKey = normalizeInvoiceKey(supplier, invoiceNo);
+  let invoiceTotal;
+  try { invoiceTotal = calculatePurchaseTotal(rows); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
   const sourceFiles = normalizeSourceFiles(body.sourceFiles);
   const requestedSourceFiles = Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && file.storedName) : [];
   if (requestedSourceFiles.length && sourceFiles.length !== requestedSourceFiles.length) {
@@ -396,12 +399,12 @@ const postPurchaseHandler = (req, res) => {
         exchangeRate: rate,
         exchangeRateDate,
         items: applied,
+        invoiceTotal,
         sourceFiles,
         createdAt: new Date().toISOString(),
         status: "posted",
       }, (saveError, record) => {
         if (saveError) return rollbackApplied((rollbackError) => res.status(500).json({ error: "Import history could not be saved; stock changes were rolled back.", rolledBack: !rollbackError, rollbackError: rollbackError ? "Stock rollback needs manual reconciliation." : undefined }));
-        const invoiceTotal = calculatePurchaseTotal(rows);
         supplierLedger.getSupplier(supplier, true)
           .then(distributor => supplierLedger.recordLedger({
             supplier: distributor, type: "purchase", currency, amount: invoiceTotal,
@@ -454,7 +457,7 @@ app.post("/commit-purchase", async (req, res) => {
   } catch (_) { return res.status(500).json({ error: "Could not check for duplicate supplier invoices." }); }
   importsDB.insert({
     type: "purchase_draft", status: "pending_approval", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
-    currency, baseCurrency, exchangeRate, exchangeRateDate, items, sourceFiles, revision: 0,
+    currency, baseCurrency, exchangeRate, exchangeRateDate, items, invoiceTotal: calculatePurchaseTotal(items), sourceFiles, revision: 0,
     createdAt: new Date().toISOString()
   }, (err, draft) => {
     if (err && err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
@@ -512,6 +515,7 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
     const updatedAt = new Date().toISOString();
     const changes = {
       ...validated,
+      invoiceTotal: calculatePurchaseTotal(validated.items),
       draftKey,
       sourceFiles: draft.sourceFiles || [],
       updatedAt,
@@ -683,7 +687,7 @@ app.post("/reverse-purchase/:importId", async (req, res) => {
       }
       const reversal = await supplierLedger.getSupplier(record.supplier, true).then(distributor => supplierLedger.recordLedger({
         supplier: distributor, type: "purchase_reversal", currency: record.currency,
-        amount: calculatePurchaseTotal(record.items || []),
+        amount: record.invoiceTotal == null ? calculatePurchaseTotal(record.items || []) : Number(record.invoiceTotal),
         reference: record.invoiceNo, importId: record._id, note: String(req.body.reason).slice(0, 300),
         eventKey: "purchase-reversal:" + record._id
       }));
