@@ -558,7 +558,7 @@ app.get("/pending-purchases", async (req, res) => {
   try {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required." });
-    importsDB.find({ type: "purchase_draft", status: { $in: ["pending_approval", "approval_needs_reconciliation", "updating", "audit_needs_review"] } }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
+    importsDB.find({ type: "purchase_draft", status: { $in: ["pending_approval", "approving", "approval_needs_reconciliation", "updating", "audit_needs_review"] } }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
       if (err) return res.status(500).json({ error: "Could not load pending purchases." });
       res.json(drafts || []);
     });
