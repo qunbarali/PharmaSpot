@@ -332,6 +332,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(bonusProduct.quantity).toBe(16);
   const bonusHistory = await request("GET", "/imports/history");
   const bonusImport = bonusHistory.data.find(record => record.invoiceNo === "INV-BONUS" && record.status === "posted");
+  expect(bonusImport).toMatchObject({ invoiceTotal: 18 });
   expect(bonusImport.items[0]).toMatchObject({ quantity: 6, paidQuantity: 4, bonusQuantity: 2, grossAmount: 20, discountAmount: 2, netAmount: 18, lineTotal: 18 });
   const bonusLedgerEvent = await supplierLedger.getLedgerEvent("purchase:" + bonusImport._id);
   expect(bonusLedgerEvent.amount).toBe(18);
@@ -423,6 +424,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const correctedHistory = await request("GET", "/imports/history");
   const correctedImport = correctedHistory.data.find(record => record.invoiceNo === "INV-EDIT-01" && record.status === "posted");
   expect(correctedImport).toBeDefined();
+  expect(correctedImport).toMatchObject({ invoiceTotal: 22.44 });
   expect(correctedImport).toMatchObject({
     supplierIdentifier: "SUP-008", currency: "INR", baseCurrency: "PKR",
     exchangeRate: 4, exchangeRateDate: "2026-11-20"
