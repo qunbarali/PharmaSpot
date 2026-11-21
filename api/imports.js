@@ -329,6 +329,16 @@ const postPurchaseHandler = (req, res) => {
           invoiceNo,
           invoiceDate,
           sourceDescription: String(row.sourceDescription || row.productName || row.description || "").trim().slice(0, 160),
+          itemCode: String(row.itemCode || "").trim().slice(0, 80),
+          packing: String(row.packing || "").trim().slice(0, 80),
+          grossAmount: row.grossAmount ?? null,
+          discountPercent: row.discountPercent ?? null,
+          discountAmount: row.discountAmount ?? null,
+          salesTaxPercent: row.salesTaxPercent ?? null,
+          salesTaxAmount: row.salesTaxAmount ?? null,
+          additionalTaxAmount: row.additionalTaxAmount ?? null,
+          netAmount: row.netAmount ?? row.lineTotal ?? null,
+          invoiceLineTotal: row.lineTotal ?? row.netAmount ?? null,
           receivedAt: new Date().toISOString(),
         };
         const snapshot = { before: JSON.parse(JSON.stringify(product)), after: null };
@@ -357,6 +367,16 @@ const postPurchaseHandler = (req, res) => {
           applied.push({
             importLineId, productId, quantity: receivedQuantity, paidQuantity: quantity, bonusQuantity, purchasePrice, salePrice, batchNumber, expiryDate,
             sourceDescription: String(row.sourceDescription || row.productName || row.description || "").trim().slice(0, 160),
+            itemCode: String(row.itemCode || "").trim().slice(0, 80),
+            packing: String(row.packing || "").trim().slice(0, 80),
+            grossAmount: row.grossAmount ?? null,
+            discountPercent: row.discountPercent ?? null,
+            discountAmount: row.discountAmount ?? null,
+            salesTaxPercent: row.salesTaxPercent ?? null,
+            salesTaxAmount: row.salesTaxAmount ?? null,
+            additionalTaxAmount: row.additionalTaxAmount ?? null,
+            netAmount: row.netAmount ?? row.lineTotal ?? null,
+            lineTotal: row.lineTotal ?? row.netAmount ?? null,
             previousProductFields,
             postedProductFields: { price: updateFields.price, supplier: updateFields.supplier, purchasePrice: updateFields.purchasePrice, expirationDate: updateFields.expirationDate }
           });
