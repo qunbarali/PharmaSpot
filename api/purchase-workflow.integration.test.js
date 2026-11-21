@@ -322,7 +322,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     invoiceDate: "2026-11-16", currency: "PKR", baseCurrency: "PKR", exchangeRate: 1,
     exchangeRateDate: "2026-11-16",
     items: [{ productId, sourceDescription: "Bonus quantity test", quantity: 4, bonusQuantity: 2,
-      purchasePrice: 5, salePrice: 7, batchNumber: "BONUS-BATCH", expiryDate: "2031-12-31" }]
+      purchasePrice: 5, salePrice: 7, grossAmount: 20, discountAmount: 2, netAmount: 18, lineTotal: 18,
+      batchNumber: "BONUS-BATCH", expiryDate: "2031-12-31" }]
   });
   expect(bonusDraft.status).toBe(201);
   const bonusApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(bonusDraft.data.draftId), { confirm: true, reviewed: true, reviewedRevision: 0 });
@@ -331,13 +332,14 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(bonusProduct.quantity).toBe(16);
   const bonusHistory = await request("GET", "/imports/history");
   const bonusImport = bonusHistory.data.find(record => record.invoiceNo === "INV-BONUS" && record.status === "posted");
-  expect(bonusImport.items[0]).toMatchObject({ quantity: 6, paidQuantity: 4, bonusQuantity: 2 });
+  expect(bonusImport.items[0]).toMatchObject({ quantity: 6, paidQuantity: 4, bonusQuantity: 2, grossAmount: 20, discountAmount: 2, netAmount: 18, lineTotal: 18 });
   const bonusLedgerEvent = await supplierLedger.getLedgerEvent("purchase:" + bonusImport._id);
-  expect(bonusLedgerEvent.amount).toBe(20);
+  expect(bonusLedgerEvent.amount).toBe(18);
   const bonusReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(bonusImport._id), {
     confirm: true, reason: "Integration test: reverse bonus quantity purchase"
   });
   expect(bonusReversal.status).toBe(200);
+  expect((await supplierLedger.getLedgerEvent("purchase-reversal:" + bonusImport._id)).amount).toBe(18);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
 
   const editableSourceName = "22222222-2222-4222-8222-222222222222.pdf";
@@ -380,6 +382,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     sourceFiles: [],
     items: [{ productId, sourceDescription: "Corrected Paracetamol 500mg",
       quantity: 3, bonusQuantity: 1, purchasePrice: 8, salePrice: 10,
+      itemCode: "008", packing: "10s", grossAmount: 24, discountAmount: 2,
+      salesTaxAmount: 0.44, additionalTaxAmount: 0, netAmount: 22.44, lineTotal: 22.44,
       batchNumber: "EDITED-BATCH", expiryDate: "2032-01-31" }]
   });
   expect(correctedDraft.status).toBe(200);
@@ -393,6 +397,8 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(correctedPending.items[0]).toMatchObject({
     sourceDescription: "Corrected Paracetamol 500mg", quantity: 3, paidQuantity: 3,
     bonusQuantity: 1, purchasePrice: 8, salePrice: 10,
+    itemCode: "008", packing: "10s", grossAmount: 24, discountAmount: 2,
+    salesTaxAmount: 0.44, additionalTaxAmount: 0, netAmount: 22.44, lineTotal: 22.44,
     batchNumber: "EDITED-BATCH", expiryDate: "2032-01-31"
   });
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
@@ -429,7 +435,9 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     purchasePrice: 8, salePrice: 10, basePurchasePrice: 32, baseSalePrice: 40,
     currency: "INR", baseCurrency: "PKR", exchangeRate: 4, exchangeRateDate: "2026-11-20"
   });
-  expect(await supplierLedger.getLedgerEvent("purchase:" + correctedImport._id)).toMatchObject({ amount: 24, currency: "INR" });
+  expect(correctedImport.items[0]).toMatchObject({ itemCode: "008", packing: "10s", grossAmount: 24, discountAmount: 2, salesTaxAmount: 0.44, netAmount: 22.44, lineTotal: 22.44 });
+  expect(correctedBatch).toMatchObject({ itemCode: "008", packing: "10s", grossAmount: 24, discountAmount: 2, salesTaxAmount: 0.44, netAmount: 22.44, invoiceLineTotal: 22.44 });
+  expect(await supplierLedger.getLedgerEvent("purchase:" + correctedImport._id)).toMatchObject({ amount: 22.44, currency: "INR" });
   const editAfterApproval = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
     supplier: "Demo Distributor", invoiceNo: "INV-EDIT-01", currency: "INR", exchangeRate: 4,
     exchangeRateDate: "2026-11-20", items: []
