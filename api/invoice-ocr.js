@@ -538,7 +538,7 @@ function parseInvoiceText(raw) {
     fields: { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, invoiceTotal },
     rows,
     reviewRequired: true,
-    warning: "OCR output is an unapproved draft. Confirm supplier identifiers, invoice number/date/currency, product mapping, every quantity and price, batch number and expiry date against the original document before saving or approving."
+    warning: "OCR output is an unapproved draft. Confirm supplier identifiers, invoice number/date/currency/payable total, product mapping, every quantity and price, line discounts and taxes, batch number and expiry date against the original document before saving or approving."
   };
 }
 
