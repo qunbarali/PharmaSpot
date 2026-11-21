@@ -329,7 +329,7 @@ function buildPendingPurchaseEditor(draft, refresh) {
   ));
 
   if (draft.status !== "pending_approval") {
-    card.append($('<p class="text-danger m-t-10"></p>').text("This purchase needs manual reconciliation and cannot be edited or approved again from this screen."));
+    card.append($('<p class="text-danger m-t-10"></p>').text("This purchase is locked for manual administrator review and cannot be edited or approved from this screen."));
     return card;
   }
   const toggle = $('<button class="btn btn-default btn-xs" type="button">Review / edit all fields</button>');
