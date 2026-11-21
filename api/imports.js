@@ -88,7 +88,7 @@ function validateZipFile(filePath) {
 }
 
 function sourceFileCandidates(files) {
-  return (Array.isArray(files) ? files : []).slice(0, 20).flatMap(file => {
+  return (Array.isArray(files) ? files : []).flatMap(file => {
     if (!file || !file.storedName) return [];
     const nested = Array.isArray(file.extractedDocuments) ? file.extractedDocuments
       : Array.isArray(file.extractedImages) ? file.extractedImages : [];
@@ -97,6 +97,11 @@ function sourceFileCandidates(files) {
 }
 
 function normalizeSourceFiles(files) {
+  const topLevel = Array.isArray(files) ? files : [];
+  const nestedCount = topLevel.reduce((count, file) => count +
+    (Array.isArray(file && file.extractedDocuments) ? file.extractedDocuments.length :
+      Array.isArray(file && file.extractedImages) ? file.extractedImages.length : 0), 0);
+  if (topLevel.length > 20 || nestedCount > 200) return [];
   return sourceFileCandidates(files).map(file => {
     const storedName = String(file && file.storedName || "");
     if (!/^[a-f0-9-]{36}\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(storedName)) return null;
