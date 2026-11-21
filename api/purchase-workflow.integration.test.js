@@ -222,6 +222,9 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const savedZipDraft = zipPendingDrafts.data.find(draft => draft._id === zipSourceDraft.data.draftId);
   expect(savedZipDraft.sourceFiles).toHaveLength(2);
   expect(savedZipDraft.sourceFiles.map(file => file.sha256)).toContain(extractedPdf.sha256);
+  const retainedExtractedPdf = await request("GET", "/imports/file/" + encodeURIComponent(extractedPdf.storedName));
+  expect(retainedExtractedPdf.status).toBe(200);
+  expect(String(retainedExtractedPdf.data)).toContain("%PDF-1.4");
 
   const standaloneInvoiceUpload = await uploadRequest("invoice-page-1.pdf", pdfFixture);
   expect(standaloneInvoiceUpload.status).toBe(200);
