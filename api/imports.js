@@ -434,7 +434,7 @@ app.post("/commit-purchase", async (req, res) => {
   } catch (_) { return res.status(500).json({ error: "Could not check for duplicate supplier invoices." }); }
   importsDB.insert({
     type: "purchase_draft", status: "pending_approval", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
-    currency, baseCurrency, exchangeRate, exchangeRateDate, items, sourceFiles,
+    currency, baseCurrency, exchangeRate, exchangeRateDate, items, sourceFiles, revision: 0,
     createdAt: new Date().toISOString()
   }, (err, draft) => {
     if (err && err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
@@ -444,7 +444,7 @@ app.post("/commit-purchase", async (req, res) => {
       lineCount: items.length,
       sourceFiles: sourceFiles.map(file => ({ originalName: file.originalName, size: file.size, sha256: file.sha256 }))
     })
-      .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", message: "Purchase saved for approval. Inventory has not changed." }))
+      .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", revision: 0, message: "Purchase saved for approval. Inventory has not changed." }))
       .catch(() => res.status(500).json({ error: "Purchase draft saved but audit record failed. Contact an administrator before approval." }));
   });
 });
@@ -458,6 +458,10 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
         (error, document) => error ? reject(error) : resolve(document))
     );
     if (!draft) return res.status(404).json({ error: "Editable pending purchase draft not found. Posted or processing purchases cannot be edited." });
+    const expectedRevision = Number(req.body && req.body.expectedRevision);
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== Number(draft.revision || 0)) {
+      return res.status(409).json({ error: "This draft has changed since it was loaded. Reload the latest version before saving corrections." });
+    }
 
     const input = { ...(req.body || {}), baseCurrency: draft.baseCurrency, sourceFiles: draft.sourceFiles || [] };
     let validated;
@@ -489,9 +493,11 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
       updatedBy: admin.username,
       revision: Number(draft.revision || 0) + 1
     };
+    const updateSelector = { _id: draft._id, type: "purchase_draft", status: "pending_approval" };
+    updateSelector.revision = draft.revision == null ? { $exists: false } : draft.revision;
     const count = await new Promise((resolve, reject) =>
       importsDB.update(
-        { _id: draft._id, type: "purchase_draft", status: "pending_approval" },
+        updateSelector,
         { $set: changes }, {},
         (error, updated) => error ? reject(error) : resolve(updated)
       )
@@ -547,6 +553,7 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
   importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" }, (err, draft) => {
     if (err) return res.status(500).json({ error: "Could not load purchase draft." });
     if (!draft) return res.status(404).json({ error: "Pending purchase draft not found or already processed." });
+    if (Number(req.body.reviewedRevision) !== Number(draft.revision || 0)) return res.status(409).json({ error: "This draft has changed since it was reviewed. Reload it and review every field again before approval." });
     importsDB.update({ _id: draft._id, status: "pending_approval" }, { $set: { status: "approving", approvedAt: new Date().toISOString() } }, {}, (updateError, count) => {
       if (updateError || !count) return res.status(409).json({ error: "This draft is already being processed." });
       const response = {
