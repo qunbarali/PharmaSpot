@@ -366,8 +366,10 @@ function buildPendingPurchaseEditor(draft, refresh) {
   const card = $('<div class="list-group-item"></div>');
   card.append($("<strong></strong>").text(draft.supplier + " — invoice " + draft.invoiceNo));
   card.append($('<p class="small text-muted"></p>').text(
-    (draft.items || []).length + " line(s) | " + new Date(draft.createdAt).toLocaleString() +
-    " | " + draft.status + " | revision " + Number(draft.revision || 0)
+    (draft.items || []).length + " line(s) | invoice total " +
+    (draft.invoiceTotal == null ? "not calculated" : Number(draft.invoiceTotal).toFixed(2) + " " + (draft.currency || "")) +
+    " | " + new Date(draft.createdAt).toLocaleString() + " | " + draft.status +
+    " | revision " + Number(draft.revision || 0)
   ));
 
   if (draft.status !== "pending_approval") {
