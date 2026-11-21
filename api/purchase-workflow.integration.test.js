@@ -171,7 +171,10 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(pdfArchiveUpload.data.invoiceReviewRequired).toBe(true);
   const uploadedArchive = pdfArchiveUpload.data.files.find(file => file.type === ".zip");
   expect(uploadedArchive.extractedDocuments).toEqual([
-    expect.objectContaining({ originalName: "invoice-page-1.pdf", type: ".pdf", storedName: expect.any(String) })
+    expect.objectContaining({
+      originalName: "invoice-page-1.pdf", type: ".pdf", storedName: expect.any(String),
+      size: pdfFixture.length, sha256: expect.stringMatching(/^[a-f0-9]{64}$/)
+    })
   ]);
   const extractedPdf = uploadedArchive.extractedDocuments[0];
   expect(fs.readFileSync(path.join(importRoot, extractedPdf.storedName)).subarray(0, 5).toString()).toBe("%PDF-");
