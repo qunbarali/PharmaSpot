@@ -147,6 +147,7 @@ describe("purchase posting and reversal helpers", () => {
     expect(draft.baseCurrency).toBe("PKR");
     expect(draft.exchangeRate).toBe(3.75);
     expect(draft.exchangeRateDate).toBe("2026-11-16");
+    expect(draft.invoiceTotal).toBe(116.28);
     expect(draft.items[0].expiryDate).toBe("2027-12-31");
     expect(draft.items[0].bonusQuantity).toBe(2);
     expect(draft.items[0]).toMatchObject({
@@ -161,6 +162,24 @@ describe("purchase posting and reversal helpers", () => {
       items: [{ productId: 5, quantity: 1, purchasePrice: 12, salePrice: 15,
         lineTotal: -2, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
     })).toThrow(/line total/i);
+  });
+
+  test("accepts a reviewed invoice payable total for document-level charges and rounding", () => {
+    const draft = validatePurchaseDraft({
+      supplier: "Main Distributor", invoiceNo: "INV-TOTAL", currency: "PKR",
+      baseCurrency: "PKR", exchangeRate: 1, exchangeRateDate: "2026-11-16",
+      invoiceTotal: "121.50",
+      items: [{ productId: 5, quantity: 2, purchasePrice: 10, salePrice: 15,
+        lineTotal: 20, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
+    });
+    expect(draft.invoiceTotal).toBe(121.5);
+    expect(() => validatePurchaseDraft({
+      supplier: "Main Distributor", invoiceNo: "INV-BAD-TOTAL", currency: "PKR",
+      baseCurrency: "PKR", exchangeRate: 1, exchangeRateDate: "2026-11-16",
+      invoiceTotal: "-1",
+      items: [{ productId: 5, quantity: 2, purchasePrice: 10, salePrice: 15,
+        lineTotal: 20, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
+    })).toThrow(/invoice payable total/i);
   });
 
   test("does not allow paid quantity to diverge from stock quantity", () => {
