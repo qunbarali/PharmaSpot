@@ -29,10 +29,19 @@ function addPurchaseRow(values = {}) {
   const row = $('<tr>' +
     '<td><input class="form-control import-description" type="text" placeholder="Invoice item description"></td>' +
     '<td><select class="form-control import-product">' + productOptions(values.productId) + '</select></td>' +
+    '<td><input class="form-control import-item-code" type="text" placeholder="Code"></td>' +
+    '<td><input class="form-control import-packing" type="text" placeholder="Pack"></td>' +
     '<td><input class="form-control import-quantity" type="number" min="0.001" step="any" placeholder="Paid qty"></td>' +
     '<td><input class="form-control import-bonus" type="number" min="0" step="any" placeholder="Free qty (0)"></td>' +
-    '<td><input class="form-control import-cost" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
-    '<td><input class="form-control import-sale" type="number" min="0" step="0.01" placeholder="0.00"></td>' +
+    '<td><input class="form-control import-cost" type="number" min="0" step="any" placeholder="Purchase"></td>' +
+    '<td><input class="form-control import-sale" type="number" min="0" step="any" placeholder="Sale"></td>' +
+    '<td><input class="form-control import-gross" type="number" min="0" step="any" placeholder="Gross"></td>' +
+    '<td><input class="form-control import-discount-percent" type="number" min="0" max="100" step="any" placeholder="Disc %"></td>' +
+    '<td><input class="form-control import-discount-amount" type="number" min="0" step="any" placeholder="Disc amt"></td>' +
+    '<td><input class="form-control import-sales-tax-percent" type="number" min="0" max="100" step="any" placeholder="Tax %"></td>' +
+    '<td><input class="form-control import-sales-tax-amount" type="number" min="0" step="any" placeholder="Tax amt"></td>' +
+    '<td><input class="form-control import-additional-tax" type="number" min="0" step="any" placeholder="Other tax"></td>' +
+    '<td><input class="form-control import-line-total" type="number" min="0" step="any" placeholder="Net line total"></td>' +
     '<td><input class="form-control import-batch" type="text" placeholder="Batch"></td>' +
     '<td><input class="form-control import-expiry" type="text" placeholder="YYYY-MM-DD"></td>' +
     '<td><button type="button" class="btn btn-danger btn-xs remove-import-row" title="Remove line">×</button></td>' +
@@ -40,10 +49,19 @@ function addPurchaseRow(values = {}) {
   $("#purchaseImportTable tbody").append(row);
   row.find(".import-description").val(values.sourceDescription || values.productName || values.description || "");
   row.find(".import-product").val(values.productId || "");
+  row.find(".import-item-code").val(values.itemCode || "");
+  row.find(".import-packing").val(values.packing || "");
   row.find(".import-quantity").val(values.quantity ?? "");
   row.find(".import-bonus").val(values.bonusQuantity ?? values.freeQuantity ?? 0);
   row.find(".import-cost").val(values.purchasePrice ?? "");
   row.find(".import-sale").val(values.salePrice ?? "");
+  row.find(".import-gross").val(values.grossAmount ?? "");
+  row.find(".import-discount-percent").val(values.discountPercent ?? "");
+  row.find(".import-discount-amount").val(values.discountAmount ?? "");
+  row.find(".import-sales-tax-percent").val(values.salesTaxPercent ?? "");
+  row.find(".import-sales-tax-amount").val(values.salesTaxAmount ?? "");
+  row.find(".import-additional-tax").val(values.additionalTaxAmount ?? "");
+  row.find(".import-line-total").val(values.lineTotal ?? values.netAmount ?? "");
   row.find(".import-batch").val(values.batchNumber || "");
   row.find(".import-expiry").val(values.expiryDate || "");
 }
@@ -123,10 +141,19 @@ function runInvoiceOcr(files) {
               addPurchaseRow({
                 sourceDescription: description,
                 productId: select.val(),
+                itemCode: invoiceRow.itemCode || "",
+                packing: invoiceRow.packing || "",
                 quantity: invoiceRow.quantity,
                 bonusQuantity: invoiceRow.bonusQuantity ?? invoiceRow.freeQuantity ?? 0,
                 purchasePrice: invoiceRow.purchasePrice ?? invoiceRow.unitPrice ?? "",
                 salePrice: invoiceRow.salePrice ?? "",
+                grossAmount: invoiceRow.grossAmount ?? "",
+                discountPercent: invoiceRow.discountPercent ?? "",
+                discountAmount: invoiceRow.discountAmount ?? "",
+                salesTaxPercent: invoiceRow.salesTaxPercent ?? "",
+                salesTaxAmount: invoiceRow.salesTaxAmount ?? "",
+                additionalTaxAmount: invoiceRow.additionalTaxAmount ?? "",
+                lineTotal: invoiceRow.lineTotal ?? invoiceRow.netAmount ?? "",
                 batchNumber: invoiceRow.batchNumber || "",
                 expiryDate: invoiceRow.expiryDate || ""
               });
@@ -300,22 +327,37 @@ function makeDraftField(label, className, value, type = "text", step) {
 
 function makeDraftLine(item = {}) {
   const row = $("<tr></tr>");
-  const description = $('<input class="form-control input-sm draft-description" type="text">').val(item.sourceDescription || item.productName || item.description || "");
+  const field = (className, type, value, min = "0", step = "any", max = "") =>
+    $('<input class="form-control input-sm ' + className + '" type="' + type + '" min="' + min + '" step="' + step + '"' + (max ? ' max="' + max + '"' : "") + '>').val(value ?? "");
+  const description = field("draft-description", "text", item.sourceDescription || item.productName || item.description || "");
   const product = $('<select class="form-control input-sm draft-product"></select>').html(productOptions(item.productId));
-  const quantity = $('<input class="form-control input-sm draft-quantity" type="number" min="0.001" step="any">').val(item.quantity ?? "");
-  const bonus = $('<input class="form-control input-sm draft-bonus" type="number" min="0" step="any">').val(item.bonusQuantity ?? 0);
-  const purchase = $('<input class="form-control input-sm draft-purchase" type="number" min="0" step="any">').val(item.purchasePrice ?? "");
-  const sale = $('<input class="form-control input-sm draft-sale" type="number" min="0" step="any">').val(item.salePrice ?? "");
-  const batch = $('<input class="form-control input-sm draft-batch" type="text">').val(item.batchNumber || "");
-  const expiry = $('<input class="form-control input-sm draft-expiry" type="date">').val(item.expiryDate || "");
+  const itemCode = field("draft-item-code", "text", item.itemCode || "");
+  const packing = field("draft-packing", "text", item.packing || "");
+  const quantity = field("draft-quantity", "number", item.quantity, "0.001");
+  const bonus = field("draft-bonus", "number", item.bonusQuantity ?? 0);
+  const purchase = field("draft-purchase", "number", item.purchasePrice);
+  const sale = field("draft-sale", "number", item.salePrice);
+  const gross = field("draft-gross", "number", item.grossAmount);
+  const discountPercent = field("draft-discount-percent", "number", item.discountPercent, "0", "any", "100");
+  const discountAmount = field("draft-discount-amount", "number", item.discountAmount);
+  const salesTaxPercent = field("draft-sales-tax-percent", "number", item.salesTaxPercent, "0", "any", "100");
+  const salesTaxAmount = field("draft-sales-tax-amount", "number", item.salesTaxAmount);
+  const additionalTax = field("draft-additional-tax", "number", item.additionalTaxAmount);
+  const lineTotal = field("draft-line-total", "number", item.lineTotal ?? item.netAmount);
+  const batch = field("draft-batch", "text", item.batchNumber || "");
+  const expiry = field("draft-expiry", "date", item.expiryDate || "");
   const remove = $('<button class="btn btn-danger btn-xs draft-remove-line" type="button" title="Remove invoice line">×</button>');
   remove.on("click", () => row.remove());
   row.append(
     $("<td></td>").append(description), $("<td></td>").append(product),
+    $("<td></td>").append(itemCode), $("<td></td>").append(packing),
     $("<td></td>").append(quantity), $("<td></td>").append(bonus),
     $("<td></td>").append(purchase), $("<td></td>").append(sale),
-    $("<td></td>").append(batch), $("<td></td>").append(expiry),
-    $("<td></td>").append(remove)
+    $("<td></td>").append(gross), $("<td></td>").append(discountPercent),
+    $("<td></td>").append(discountAmount), $("<td></td>").append(salesTaxPercent),
+    $("<td></td>").append(salesTaxAmount), $("<td></td>").append(additionalTax),
+    $("<td></td>").append(lineTotal), $("<td></td>").append(batch),
+    $("<td></td>").append(expiry), $("<td></td>").append(remove)
   );
   return row;
 }
@@ -356,7 +398,7 @@ function buildPendingPurchaseEditor(draft, refresh) {
   baseField.find("input").val(draft.baseCurrency || baseCurrency);
   metadata.append(currencyField, baseField);
 
-  const table = $('<div class="table-responsive"><table class="table table-bordered table-condensed"><thead><tr><th>Invoice description</th><th>Product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase price</th><th>Sale price</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table></div>');
+  const table = $('<div class="table-responsive"><table class="table table-bordered table-condensed"><thead><tr><th>Invoice description</th><th>Product</th><th>Item code</th><th>Packing</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase price</th><th>Sale price</th><th>Gross</th><th>Discount %</th><th>Discount amount</th><th>Sales tax %</th><th>Sales tax amount</th><th>Additional tax</th><th>Net line total</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table></div>');
   const body = table.find("tbody");
   (draft.items || []).forEach(item => body.append(makeDraftLine(item)));
   const addLine = $('<button class="btn btn-default btn-xs draft-add-line" type="button">Add invoice line</button>');
@@ -377,10 +419,19 @@ function buildPendingPurchaseEditor(draft, refresh) {
       items.push({
         sourceDescription: row.find(".draft-description").val(),
         productId: row.find(".draft-product").val(),
+        itemCode: row.find(".draft-item-code").val(),
+        packing: row.find(".draft-packing").val(),
         quantity: row.find(".draft-quantity").val(),
         bonusQuantity: row.find(".draft-bonus").val(),
         purchasePrice: row.find(".draft-purchase").val(),
         salePrice: row.find(".draft-sale").val(),
+        grossAmount: row.find(".draft-gross").val(),
+        discountPercent: row.find(".draft-discount-percent").val(),
+        discountAmount: row.find(".draft-discount-amount").val(),
+        salesTaxPercent: row.find(".draft-sales-tax-percent").val(),
+        salesTaxAmount: row.find(".draft-sales-tax-amount").val(),
+        additionalTaxAmount: row.find(".draft-additional-tax").val(),
+        lineTotal: row.find(".draft-line-total").val(),
         batchNumber: row.find(".draft-batch").val(),
         expiryDate: row.find(".draft-expiry").val()
       });
@@ -596,10 +647,19 @@ $(function () {
       items.push({
         sourceDescription: row.find(".import-description").val(),
         productId: row.find(".import-product").val(),
+        itemCode: row.find(".import-item-code").val(),
+        packing: row.find(".import-packing").val(),
         quantity: row.find(".import-quantity").val(),
         bonusQuantity: row.find(".import-bonus").val() || 0,
         purchasePrice: row.find(".import-cost").val(),
         salePrice: row.find(".import-sale").val(),
+        grossAmount: row.find(".import-gross").val(),
+        discountPercent: row.find(".import-discount-percent").val(),
+        discountAmount: row.find(".import-discount-amount").val(),
+        salesTaxPercent: row.find(".import-sales-tax-percent").val(),
+        salesTaxAmount: row.find(".import-sales-tax-amount").val(),
+        additionalTaxAmount: row.find(".import-additional-tax").val(),
+        lineTotal: row.find(".import-line-total").val(),
         batchNumber: row.find(".import-batch").val(),
         expiryDate: row.find(".import-expiry").val()
       });
