@@ -703,7 +703,7 @@ app.get("/file/:storedName", async (req, res) => {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required to view imported documents." });
     const storedName = path.basename(String(req.params.storedName || ""));
-    if (!storedName || storedName !== req.params.storedName) return res.sendStatus(400);
+    if (!storedName || storedName !== req.params.storedName || !/^[a-f0-9-]{36}\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(storedName)) return res.sendStatus(400);
     const filePath = path.join(importRoot, storedName);
     if (!fs.existsSync(filePath)) return res.sendStatus(404);
     res.sendFile(filePath);
