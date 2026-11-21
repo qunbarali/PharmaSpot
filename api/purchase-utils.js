@@ -228,7 +228,13 @@ function validatePurchaseDraft(input) {
       sourceDescription: String(item.sourceDescription || item.productName || item.description || "").trim().slice(0, 160)
     };
   });
-  calculatePurchaseTotal(normalizedItems);
+  const invoiceTotalRaw = body.invoiceTotal;
+  const invoiceTotal = invoiceTotalRaw == null || (typeof invoiceTotalRaw === "string" && !invoiceTotalRaw.trim())
+    ? calculatePurchaseTotal(normalizedItems)
+    : Number(invoiceTotalRaw);
+  if (!Number.isFinite(invoiceTotal) || invoiceTotal < 0) {
+    throw new Error("Invoice payable total must be a non-negative amount in the invoice currency.");
+  }
 
   return {
     supplier,
@@ -239,6 +245,7 @@ function validatePurchaseDraft(input) {
     baseCurrency,
     exchangeRate,
     exchangeRateDate,
+    invoiceTotal,
     items: normalizedItems
   };
 }
