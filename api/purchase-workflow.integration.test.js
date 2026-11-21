@@ -465,6 +465,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const actions = auditResponse.data.map(event => event.action);
   expect(actions).toEqual(expect.arrayContaining([
     "purchase_draft_created",
+    "purchase_draft_updated",
     "purchase_approved_and_posted",
     "purchase_reversed",
     "supplier_payment_recorded",
