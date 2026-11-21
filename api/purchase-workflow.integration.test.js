@@ -328,6 +328,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(bonusDraft.status).toBe(201);
   const bonusApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(bonusDraft.data.draftId), { confirm: true, reviewed: true, reviewedRevision: 0 });
   expect(bonusApproval.status).toBe(200);
+  expect(bonusApproval.data.invoiceTotal).toBe(18);
   const bonusProduct = await findOne(inventoryDB, { _id: productId });
   expect(bonusProduct.quantity).toBe(16);
   const bonusHistory = await request("GET", "/imports/history");
