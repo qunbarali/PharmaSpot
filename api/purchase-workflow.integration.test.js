@@ -320,7 +320,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const bonusDraft = await request("POST", "/imports/commit-purchase", {
     supplier: "Demo Distributor", supplierIdentifier: "SUP-007", invoiceNo: "INV-BONUS",
     invoiceDate: "2026-11-16", currency: "PKR", baseCurrency: "PKR", exchangeRate: 1,
-    exchangeRateDate: "2026-11-16",
+    exchangeRateDate: "2026-11-16", invoiceTotal: 19.5,
     items: [{ productId, sourceDescription: "Bonus quantity test", quantity: 4, bonusQuantity: 2,
       purchasePrice: 5, salePrice: 7, grossAmount: 20, discountAmount: 2, netAmount: 18, lineTotal: 18,
       batchNumber: "BONUS-BATCH", expiryDate: "2031-12-31" }]
@@ -328,20 +328,20 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(bonusDraft.status).toBe(201);
   const bonusApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(bonusDraft.data.draftId), { confirm: true, reviewed: true, reviewedRevision: 0 });
   expect(bonusApproval.status).toBe(200);
-  expect(bonusApproval.data.invoiceTotal).toBe(18);
+  expect(bonusApproval.data.invoiceTotal).toBe(19.5);
   const bonusProduct = await findOne(inventoryDB, { _id: productId });
   expect(bonusProduct.quantity).toBe(16);
   const bonusHistory = await request("GET", "/imports/history");
   const bonusImport = bonusHistory.data.find(record => record.invoiceNo === "INV-BONUS" && record.status === "posted");
-  expect(bonusImport).toMatchObject({ invoiceTotal: 18 });
+  expect(bonusImport).toMatchObject({ invoiceTotal: 19.5 });
   expect(bonusImport.items[0]).toMatchObject({ quantity: 6, paidQuantity: 4, bonusQuantity: 2, grossAmount: 20, discountAmount: 2, netAmount: 18, lineTotal: 18 });
   const bonusLedgerEvent = await supplierLedger.getLedgerEvent("purchase:" + bonusImport._id);
-  expect(bonusLedgerEvent.amount).toBe(18);
+  expect(bonusLedgerEvent.amount).toBe(19.5);
   const bonusReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(bonusImport._id), {
     confirm: true, reason: "Integration test: reverse bonus quantity purchase"
   });
   expect(bonusReversal.status).toBe(200);
-  expect((await supplierLedger.getLedgerEvent("purchase-reversal:" + bonusImport._id)).amount).toBe(18);
+  expect((await supplierLedger.getLedgerEvent("purchase-reversal:" + bonusImport._id)).amount).toBe(19.5);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
 
   const editableSourceName = "22222222-2222-4222-8222-222222222222.pdf";
@@ -380,7 +380,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const correctedDraft = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
     supplier: "Demo Distributor", supplierIdentifier: "SUP-008", invoiceNo: "INV-EDIT-01",
     invoiceDate: "2026-11-19", currency: "INR", baseCurrency: "USD",
-    exchangeRate: 4, exchangeRateDate: "2026-11-20", expectedRevision: 0,
+    exchangeRate: 4, exchangeRateDate: "2026-11-20", expectedRevision: 0, invoiceTotal: 22.5,
     sourceFiles: [],
     items: [{ productId, sourceDescription: "Corrected Paracetamol 500mg",
       quantity: 3, bonusQuantity: 1, purchasePrice: 8, salePrice: 10,
@@ -392,7 +392,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const pendingAfterCorrection = await request("GET", "/imports/pending-purchases");
   const correctedPending = pendingAfterCorrection.data.find(draft => draft._id === editableDraft.data.draftId);
   expect(correctedPending).toMatchObject({
-    supplierIdentifier: "SUP-008", invoiceNo: "INV-EDIT-01", currency: "INR",
+    invoiceTotal: 22.5, supplierIdentifier: "SUP-008", invoiceNo: "INV-EDIT-01", currency: "INR",
     baseCurrency: "PKR", exchangeRate: 4, exchangeRateDate: "2026-11-20", revision: 1
   });
   expect(correctedPending.sourceFiles[0]).toMatchObject({ originalName: "editable-invoice.pdf", type: ".pdf" });
@@ -425,7 +425,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   const correctedHistory = await request("GET", "/imports/history");
   const correctedImport = correctedHistory.data.find(record => record.invoiceNo === "INV-EDIT-01" && record.status === "posted");
   expect(correctedImport).toBeDefined();
-  expect(correctedImport).toMatchObject({ invoiceTotal: 22.44 });
+  expect(correctedImport).toMatchObject({ invoiceTotal: 22.5 });
   expect(correctedImport).toMatchObject({
     supplierIdentifier: "SUP-008", currency: "INR", baseCurrency: "PKR",
     exchangeRate: 4, exchangeRateDate: "2026-11-20"
@@ -440,7 +440,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   });
   expect(correctedImport.items[0]).toMatchObject({ itemCode: "008", packing: "10s", grossAmount: 24, discountAmount: 2, salesTaxAmount: 0.44, netAmount: 22.44, lineTotal: 22.44 });
   expect(correctedBatch).toMatchObject({ itemCode: "008", packing: "10s", grossAmount: 24, discountAmount: 2, salesTaxAmount: 0.44, netAmount: 22.44, invoiceLineTotal: 22.44 });
-  expect(await supplierLedger.getLedgerEvent("purchase:" + correctedImport._id)).toMatchObject({ amount: 22.44, currency: "INR" });
+  expect(await supplierLedger.getLedgerEvent("purchase:" + correctedImport._id)).toMatchObject({ amount: 22.5, currency: "INR" });
   const editAfterApproval = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
     supplier: "Demo Distributor", invoiceNo: "INV-EDIT-01", currency: "INR", exchangeRate: 4,
     exchangeRateDate: "2026-11-20", items: []
