@@ -433,8 +433,23 @@ function buildPendingPurchaseEditor(draft, refresh) {
     });
   });
 
+  const sourceFiles = $('<div class="m-b-10"></div>');
+  sourceFiles.append($("<strong></strong>").text("Original invoice source files (read-only)"));
+  const sourceList = $('<ul class="small"></ul>');
+  (draft.sourceFiles || []).forEach(file => {
+    const link = $('<a target="_blank" rel="noopener noreferrer"></a>')
+      .attr("href", importApi + "imports/file/" + encodeURIComponent(file.storedName))
+      .text(file.originalName || file.storedName);
+    const item = $("<li></li>").append(link);
+    if (file.sha256) item.append($("<span class='text-muted'></span>").text(" — SHA-256 " + String(file.sha256).slice(0, 16) + "…"));
+    sourceList.append(item);
+  });
+  if (!sourceList.children().length) sourceList.append($("<li></li>").text("No original file was attached to this draft."));
+  sourceFiles.append(sourceList);
+
   editor.append(
     $('<p class="text-warning"></p>').text("Review and correct every field below. OCR values are suggestions only. Saving corrections keeps the draft pending and does not change inventory."),
+    sourceFiles,
     metadata, table, addLine, $("<div class='clearfix'></div>"), save, $("<div class='clearfix'></div>"), review,
     $("<div class='clearfix'></div>"), approve
   );
