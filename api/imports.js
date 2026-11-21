@@ -574,7 +574,7 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
     if (err) return res.status(500).json({ error: "Could not load purchase draft." });
     if (!draft) return res.status(404).json({ error: "Pending purchase draft not found or already processed." });
     const reviewedRevisionRaw = req.body.reviewedRevision;
-    if (reviewedRevisionRaw == null || reviewedRevisionRaw === "" || Number(reviewedRevisionRaw) !== Number(draft.revision || 0)) return res.status(409).json({ error: "This draft has changed since it was reviewed. Reload it and review every field again before approval." });
+    if (reviewedRevisionRaw == null || reviewedRevisionRaw === "" || !Number.isSafeInteger(Number(reviewedRevisionRaw)) || Number(reviewedRevisionRaw) !== Number(draft.revision || 0)) return res.status(409).json({ error: "This draft has changed since it was reviewed. Reload it and review every field again before approval." });
     const approvalSelector = { _id: draft._id, status: "pending_approval" };
     approvalSelector.revision = draft.revision == null ? { $exists: false } : draft.revision;
     importsDB.update(approvalSelector, { $set: { status: "approving", approvedAt: new Date().toISOString() } }, {}, (updateError, count) => {
