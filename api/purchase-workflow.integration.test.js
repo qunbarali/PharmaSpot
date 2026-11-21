@@ -392,6 +392,15 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   });
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
 
+  const staleDraftEdit = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
+    supplier: "Demo Distributor", supplierIdentifier: "SUP-009", invoiceNo: "INV-EDIT-01",
+    invoiceDate: "2026-11-19", currency: "INR", exchangeRate: 4,
+    exchangeRateDate: "2026-11-20", expectedRevision: 0,
+    items: [{ productId, quantity: 5, bonusQuantity: 0, purchasePrice: 8, salePrice: 10,
+      batchNumber: "STALE-BATCH", expiryDate: "2032-01-31" }]
+  });
+  expect(staleDraftEdit.status).toBe(409);
+
   const staleRevisionApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(editableDraft.data.draftId), {
     confirm: true, reviewed: true, reviewedRevision: 0
   });
