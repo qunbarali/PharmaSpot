@@ -34,6 +34,16 @@ describe("purchase posting and reversal helpers", () => {
     expect(() => calculatePurchaseTotal([{ quantity: 0, purchasePrice: 5 }])).toThrow();
   });
 
+  test("uses reviewed net line totals for supplier balances while retaining unit-cost fallback", () => {
+    expect(calculatePurchaseTotal([
+      { quantity: 4, bonusQuantity: 2, purchasePrice: 5, grossAmount: 20, discountAmount: 2, lineTotal: 18 },
+      { quantity: 3, purchasePrice: 4 }
+    ])).toBe(30);
+    expect(calculatePurchaseTotal([{ quantity: 2, purchasePrice: 10, netAmount: 17 }])).toBe(17);
+    expect(() => calculatePurchaseTotal([{ quantity: 2, purchasePrice: 10, lineTotal: -1 }])).toThrow(/line total/i);
+    expect(() => calculatePurchaseTotal([{ quantity: 2, purchasePrice: 10, lineTotal: "bad" }])).toThrow(/line total/i);
+  });
+
   test("converts invoice prices into store currency at the recorded rate and precision", () => {
     expect(convertToBaseCurrency(12.5, 3.75, 4)).toBe(46.875);
     expect(convertToBaseCurrency(12.5, 3.75, 2)).toBe(46.88);
@@ -125,6 +135,9 @@ describe("purchase posting and reversal helpers", () => {
       items: [{
         productId: 5, sourceDescription: "Paracetamol 500mg",
         quantity: 10, bonusQuantity: 2, purchasePrice: 12, salePrice: 15,
+        itemCode: "009", packing: "10s", grossAmount: 120, discountPercent: 5,
+        discountAmount: 6, salesTaxPercent: 2, salesTaxAmount: 2.28,
+        additionalTaxAmount: 0, netAmount: 116.28, lineTotal: 116.28,
         batchNumber: "B-1", expiryDate: "31-Dec-2027"
       }]
     });
@@ -136,6 +149,18 @@ describe("purchase posting and reversal helpers", () => {
     expect(draft.exchangeRateDate).toBe("2026-11-16");
     expect(draft.items[0].expiryDate).toBe("2027-12-31");
     expect(draft.items[0].bonusQuantity).toBe(2);
+    expect(draft.items[0]).toMatchObject({
+      itemCode: "009", packing: "10s", grossAmount: 120, discountPercent: 5,
+      discountAmount: 6, salesTaxPercent: 2, salesTaxAmount: 2.28,
+      additionalTaxAmount: 0, netAmount: 116.28, lineTotal: 116.28
+    });
+    expect(calculatePurchaseTotal(draft.items)).toBe(116.28);
+    expect(() => validatePurchaseDraft({
+      supplier: "Main Distributor", invoiceNo: "INV-BAD-LINE-TOTAL", currency: "PKR",
+      baseCurrency: "PKR", exchangeRate: 1, exchangeRateDate: "2026-11-16",
+      items: [{ productId: 5, quantity: 1, purchasePrice: 12, salePrice: 15,
+        lineTotal: -2, batchNumber: "B-1", expiryDate: "31-Dec-2027" }]
+    })).toThrow(/line total/i);
   });
 
   test("does not allow paid quantity to diverge from stock quantity", () => {
