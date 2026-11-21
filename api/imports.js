@@ -87,8 +87,17 @@ function validateZipFile(filePath) {
   if (!valid) throw new Error("The uploaded ZIP archive has an invalid file signature.");
 }
 
+function sourceFileCandidates(files) {
+  return (Array.isArray(files) ? files : []).slice(0, 20).flatMap(file => {
+    if (!file || !file.storedName) return [];
+    const nested = Array.isArray(file.extractedDocuments) ? file.extractedDocuments
+      : Array.isArray(file.extractedImages) ? file.extractedImages : [];
+    return [file, ...nested.filter(document => document && document.storedName)];
+  });
+}
+
 function normalizeSourceFiles(files) {
-  return (Array.isArray(files) ? files : []).slice(0, 20).map(file => {
+  return sourceFileCandidates(files).map(file => {
     const storedName = String(file && file.storedName || "");
     if (!/^[a-f0-9-]{36}\.(pdf|zip|jpg|jpeg|png|webp)$/i.test(storedName)) return null;
     const filePath = path.join(importRoot, storedName);
@@ -124,6 +133,8 @@ app.post("/upload", async (req, res) => {
       return res.status(400).json({ error: error.message });
     }
     const stagedPaths = [];
+    let totalExtractedBytes = 0;
+    let totalExtractedCount = 0;
     try {
       const files = [];
       for (const file of (req.files || [])) {
@@ -144,15 +155,17 @@ app.post("/upload", async (req, res) => {
         if (record.type === ".zip") {
           const directory = await unzipper.Open.file(file.path);
           const extracted = [];
-          let extractedBytes = 0;
-          let extractedCount = 0;
+          let archiveBytes = 0;
           for (const entry of directory.files) {
             if (entry.type !== "File") continue;
             const ext = path.extname(entry.path).toLowerCase();
             if (!invoiceDocumentExts.has(ext)) continue;
-            extractedCount += 1;
+            totalExtractedCount += 1;
             const declaredSize = Number(entry.vars && entry.vars.uncompressedSize || 0);
-            if (extractedCount > 200 || declaredSize > 10 * 1024 * 1024 || extractedBytes + declaredSize > 50 * 1024 * 1024) throw new Error("ZIP archive exceeds safe extraction limits.");
+            if (!Number.isSafeInteger(declaredSize) || declaredSize < 0 || totalExtractedCount > 200 ||
+                declaredSize > 10 * 1024 * 1024 || totalExtractedBytes + archiveBytes + declaredSize > 50 * 1024 * 1024) {
+              throw new Error("Uploaded archives exceed safe document-count or uncompressed-size limits.");
+            }
             if (!isSafeArchiveEntryPath(entry.path)) throw new Error("ZIP archive contains an unsafe file path.");
             const safeEntryPath = path.posix.normalize(String(entry.path || "").replace(/\\/g, "/"));
             const base = path.posix.basename(safeEntryPath);
@@ -166,7 +179,7 @@ app.post("/upload", async (req, res) => {
               const limiter = new Transform({
                 transform(chunk, encoding, callback) {
                   actualBytes += chunk.length;
-                  if (actualBytes > 10 * 1024 * 1024 || extractedBytes + actualBytes > 50 * 1024 * 1024) return callback(new Error("ZIP archive exceeds safe extraction limits."));
+                  if (actualBytes > 10 * 1024 * 1024 || totalExtractedBytes + archiveBytes + actualBytes > 50 * 1024 * 1024) return callback(new Error("Uploaded archives exceed safe uncompressed-size limits."));
                   callback(null, chunk);
                 }
               });
@@ -177,14 +190,16 @@ app.post("/upload", async (req, res) => {
               output.on("finish", resolve);
               entry.pipe(limiter).pipe(output);
             });
-            extractedBytes += actualBytes;
+            archiveBytes += actualBytes;
             try {
               validateInvoiceFile(targetPath, ext);
             } catch (_) {
               throw new Error("ZIP archive contains an invalid supported document: " + base);
             }
-            extracted.push({ originalName: base, storedName: targetName, type: ext, suggestedName: cleanName(base) });
+            const extractedSha256 = crypto.createHash("sha256").update(fs.readFileSync(targetPath)).digest("hex");
+            extracted.push({ originalName: base, storedName: targetName, type: ext, size: actualBytes, sha256: extractedSha256, suggestedName: cleanName(base) });
           }
+          totalExtractedBytes += archiveBytes;
           record.extractedDocuments = extracted;
           record.extractedImages = extracted.filter(document => imageExts.has(document.type));
         }
@@ -280,7 +295,7 @@ const postPurchaseHandler = (req, res) => {
     if (!Number.isFinite(invoiceTotal) || invoiceTotal < 0) throw new Error("Invoice payable total must be a non-negative amount in the invoice currency.");
   } catch (error) { return res.status(400).json({ error: error.message }); }
   const sourceFiles = normalizeSourceFiles(body.sourceFiles);
-  const requestedSourceFiles = Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && file.storedName) : [];
+  const requestedSourceFiles = sourceFileCandidates(body.sourceFiles);
   if (requestedSourceFiles.length && sourceFiles.length !== requestedSourceFiles.length) {
     return res.status(409).json({ error: "One or more original invoice files are missing or invalid. Re-upload the source documents; no stock was posted." });
   }
@@ -438,7 +453,7 @@ app.post("/commit-purchase", async (req, res) => {
   const { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate, invoiceTotal, items } = validated;
   const draftKey = normalizeInvoiceKey(supplier, invoiceNo);
   const sourceFiles = normalizeSourceFiles(body.sourceFiles);
-  const requestedSourceFiles = Array.isArray(body.sourceFiles) ? body.sourceFiles.filter(file => file && file.storedName) : [];
+  const requestedSourceFiles = sourceFileCandidates(body.sourceFiles);
   if (requestedSourceFiles.length && sourceFiles.length !== requestedSourceFiles.length) {
     return res.status(400).json({ error: "One or more original invoice files are missing or invalid. Re-upload the source documents before saving this draft." });
   }
