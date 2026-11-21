@@ -449,6 +449,84 @@ app.post("/commit-purchase", async (req, res) => {
   });
 });
 
+app.post("/update-purchase-draft/:draftId", async (req, res) => {
+  try {
+    const admin = await authorizeAdmin(req);
+    if (!admin) return res.status(403).json({ error: "An active administrator account is required to edit purchase drafts." });
+    const draft = await new Promise((resolve, reject) =>
+      importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" },
+        (error, document) => error ? reject(error) : resolve(document))
+    );
+    if (!draft) return res.status(404).json({ error: "Editable pending purchase draft not found. Posted or processing purchases cannot be edited." });
+
+    const input = { ...(req.body || {}), baseCurrency: draft.baseCurrency, sourceFiles: draft.sourceFiles || [] };
+    let validated;
+    try { validated = validatePurchaseDraft(input); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+
+    const draftKey = normalizeInvoiceKey(validated.supplier, validated.invoiceNo);
+    const postedDuplicate = await new Promise((resolve, reject) =>
+      importsDB.findOne({ importKey: draftKey }, (error, document) => error ? reject(error) : resolve(document))
+    );
+    if (postedDuplicate) return res.status(409).json({
+      error: "Another import already uses this supplier and invoice number. The draft was not changed.",
+      importId: postedDuplicate._id
+    });
+    const draftDuplicate = await new Promise((resolve, reject) =>
+      importsDB.findOne({ draftKey, _id: { $ne: draft._id } }, (error, document) => error ? reject(error) : resolve(document))
+    );
+    if (draftDuplicate) return res.status(409).json({
+      error: "Another pending draft already uses this supplier and invoice number. The draft was not changed.",
+      draftId: draftDuplicate._id
+    });
+
+    const updatedAt = new Date().toISOString();
+    const changes = {
+      ...validated,
+      draftKey,
+      sourceFiles: draft.sourceFiles || [],
+      updatedAt,
+      updatedBy: admin.username,
+      revision: Number(draft.revision || 0) + 1
+    };
+    const count = await new Promise((resolve, reject) =>
+      importsDB.update(
+        { _id: draft._id, type: "purchase_draft", status: "pending_approval" },
+        { $set: changes }, {},
+        (error, updated) => error ? reject(error) : resolve(updated)
+      )
+    );
+    if (!count) return res.status(409).json({ error: "The draft changed state while it was being edited. Reload pending purchases before trying again." });
+
+    try {
+      await writeAudit(req, "purchase_draft_updated", "purchase_draft", draft._id, {
+        previousSupplier: draft.supplier,
+        previousInvoiceNo: draft.invoiceNo,
+        supplier: validated.supplier,
+        supplierIdentifier: validated.supplierIdentifier,
+        invoiceNo: validated.invoiceNo,
+        invoiceDate: validated.invoiceDate,
+        currency: validated.currency,
+        baseCurrency: draft.baseCurrency,
+        exchangeRate: validated.exchangeRate,
+        exchangeRateDate: validated.exchangeRateDate,
+        lineCount: validated.items.length,
+        revision: changes.revision
+      });
+    } catch (auditError) {
+      console.error("Purchase draft updated but audit logging failed", draft._id, auditError);
+      return res.status(207).json({
+        success: true, draftId: draft._id, status: "pending_approval", revision: changes.revision,
+        warning: "Corrections were saved, but audit logging failed. Do not approve until an administrator checks the audit trail."
+      });
+    }
+    return res.json({ success: true, draftId: draft._id, status: "pending_approval", revision: changes.revision, message: "Draft corrections saved. Inventory has not changed." });
+  } catch (error) {
+    console.error("Could not update purchase draft:", error);
+    return res.status(500).json({ error: "Could not update the purchase draft safely." });
+  }
+});
+
 app.get("/pending-purchases", async (req, res) => {
   try {
     const admin = await authorizeAdmin(req);
@@ -464,7 +542,7 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
   try {
   const admin = await authorizeAdmin(req);
   if (!admin) return res.status(403).json({ error: "An active administrator account is required to approve purchases." });
-  if (!req.body || req.body.confirm !== true) return res.status(400).json({ error: "Explicit approval confirmation is required." });
+  if (!req.body || req.body.confirm !== true || req.body.reviewed !== true) return res.status(400).json({ error: "Review every supplier, invoice, currency and batch field, then provide explicit review and approval confirmation." });
   importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" }, (err, draft) => {
     if (err) return res.status(500).json({ error: "Could not load purchase draft." });
     if (!draft) return res.status(404).json({ error: "Pending purchase draft not found or already processed." });
