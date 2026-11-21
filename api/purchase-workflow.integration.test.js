@@ -228,7 +228,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(pending.status).toBe(200);
   expect(pending.data.some(draft => draft._id === firstDraft.data.draftId)).toBe(true);
 
-  const firstApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(firstDraft.data.draftId), { confirm: true });
+  const firstApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(firstDraft.data.draftId), { confirm: true, reviewed: true });
   expect(firstApproval.status).toBe(200);
   expect(firstApproval.data.success).toBe(true);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(17);
@@ -258,7 +258,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     invoiceDate: "2026-11-15", exchangeRateDate: "2026-11-16"
   }));
   expect(secondDraft.status).toBe(201);
-  const secondApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(secondDraft.data.draftId), { confirm: true });
+  const secondApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(secondDraft.data.draftId), { confirm: true, reviewed: true });
   expect(secondApproval.status).toBe(200);
   history = await request("GET", "/imports/history");
   const secondImport = history.data.find(record => record.invoiceNo === "INV-002" && record.status === "posted");
@@ -320,7 +320,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
       purchasePrice: 5, salePrice: 7, batchNumber: "BONUS-BATCH", expiryDate: "2031-12-31" }]
   });
   expect(bonusDraft.status).toBe(201);
-  const bonusApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(bonusDraft.data.draftId), { confirm: true });
+  const bonusApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(bonusDraft.data.draftId), { confirm: true, reviewed: true });
   expect(bonusApproval.status).toBe(200);
   const bonusProduct = await findOne(inventoryDB, { _id: productId });
   expect(bonusProduct.quantity).toBe(16);
@@ -335,6 +335,92 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(bonusReversal.status).toBe(200);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
 
+  const editableSourceName = "22222222-2222-4222-8222-222222222222.pdf";
+  fs.writeFileSync(path.join(importRoot, editableSourceName), Buffer.from("%PDF-1.4\\neditable source invoice\\n"));
+  const editableDraft = await request("POST", "/imports/commit-purchase", {
+    supplier: "Demo Distributor", supplierIdentifier: "SUP-OLD", invoiceNo: "INV-EDIT-01",
+    invoiceDate: "2026-11-17", currency: "INR", baseCurrency: "PKR", exchangeRate: 3.75,
+    exchangeRateDate: "2026-11-17",
+    sourceFiles: [{ originalName: "editable-invoice.pdf", storedName: editableSourceName }],
+    items: [{ productId, sourceDescription: "Uncorrected OCR description", quantity: 2, bonusQuantity: 0,
+      purchasePrice: 5, salePrice: 7, batchNumber: "OLD-BATCH", expiryDate: "2031-12-31" }]
+  });
+  expect(editableDraft.status).toBe(201);
+  const noReviewApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(editableDraft.data.draftId), { confirm: true });
+  expect(noReviewApproval.status).toBe(400);
+  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+
+  const invalidDraftUpdate = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
+    supplier: "Demo Distributor", supplierIdentifier: "SUP-008", invoiceNo: "INV-EDIT-01",
+    invoiceDate: "2026-11-19", currency: "INR", exchangeRate: 4,
+    exchangeRateDate: "2026-11-20",
+    items: [{ productId, quantity: 3, bonusQuantity: 1, purchasePrice: 8, salePrice: 10,
+      batchNumber: "EDITED-BATCH", expiryDate: "31-Feb-2032" }]
+  });
+  expect(invalidDraftUpdate.status).toBe(400);
+  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+
+  const duplicateDraftUpdate = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
+    supplier: "Demo Distributor", invoiceNo: "INV-001", currency: "INR", exchangeRate: 4,
+    exchangeRateDate: "2026-11-20",
+    items: [{ productId, quantity: 3, bonusQuantity: 1, purchasePrice: 8, salePrice: 10,
+      batchNumber: "EDITED-BATCH", expiryDate: "2032-01-31" }]
+  });
+  expect(duplicateDraftUpdate.status).toBe(409);
+
+  const correctedDraft = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
+    supplier: "Demo Distributor", supplierIdentifier: "SUP-008", invoiceNo: "INV-EDIT-01",
+    invoiceDate: "2026-11-19", currency: "INR", baseCurrency: "USD",
+    exchangeRate: 4, exchangeRateDate: "2026-11-20",
+    sourceFiles: [],
+    items: [{ productId, sourceDescription: "Corrected Paracetamol 500mg",
+      quantity: 3, bonusQuantity: 1, purchasePrice: 8, salePrice: 10,
+      batchNumber: "EDITED-BATCH", expiryDate: "2032-01-31" }]
+  });
+  expect(correctedDraft.status).toBe(200);
+  const pendingAfterCorrection = await request("GET", "/imports/pending-purchases");
+  const correctedPending = pendingAfterCorrection.data.find(draft => draft._id === editableDraft.data.draftId);
+  expect(correctedPending).toMatchObject({
+    supplierIdentifier: "SUP-008", invoiceNo: "INV-EDIT-01", currency: "INR",
+    baseCurrency: "PKR", exchangeRate: 4, exchangeRateDate: "2026-11-20", revision: 1
+  });
+  expect(correctedPending.sourceFiles[0]).toMatchObject({ originalName: "editable-invoice.pdf", type: ".pdf" });
+  expect(correctedPending.items[0]).toMatchObject({
+    sourceDescription: "Corrected Paracetamol 500mg", quantity: 3, paidQuantity: 3,
+    bonusQuantity: 1, purchasePrice: 8, salePrice: 10,
+    batchNumber: "EDITED-BATCH", expiryDate: "2032-01-31"
+  });
+  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+
+  const correctedApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(editableDraft.data.draftId), { confirm: true, reviewed: true });
+  expect(correctedApproval.status).toBe(200);
+  const correctedHistory = await request("GET", "/imports/history");
+  const correctedImport = correctedHistory.data.find(record => record.invoiceNo === "INV-EDIT-01" && record.status === "posted");
+  expect(correctedImport).toBeDefined();
+  expect(correctedImport).toMatchObject({
+    supplierIdentifier: "SUP-008", currency: "INR", baseCurrency: "PKR",
+    exchangeRate: 4, exchangeRateDate: "2026-11-20"
+  });
+  expect(correctedImport.sourceFiles[0].sha256).toMatch(/^[a-f0-9]{64}$/);
+  const correctedProduct = await findOne(inventoryDB, { _id: productId });
+  const correctedBatch = correctedProduct.batches.find(batch => batch.importLineId === correctedImport.items[0].importLineId);
+  expect(correctedBatch).toMatchObject({
+    quantity: 4, paidQuantity: 3, bonusQuantity: 1,
+    purchasePrice: 8, salePrice: 10, basePurchasePrice: 32, baseSalePrice: 40,
+    currency: "INR", baseCurrency: "PKR", exchangeRate: 4, exchangeRateDate: "2026-11-20"
+  });
+  expect(await supplierLedger.getLedgerEvent("purchase:" + correctedImport._id)).toMatchObject({ amount: 24, currency: "INR" });
+  const editAfterApproval = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(editableDraft.data.draftId), {
+    supplier: "Demo Distributor", invoiceNo: "INV-EDIT-01", currency: "INR", exchangeRate: 4,
+    exchangeRateDate: "2026-11-20", items: []
+  });
+  expect(editAfterApproval.status).toBe(404);
+  const correctedReversal = await request("POST", "/imports/reverse-purchase/" + encodeURIComponent(correctedImport._id), {
+    confirm: true, reason: "Integration test: reverse corrected editable draft"
+  });
+  expect(correctedReversal.status).toBe(200);
+  expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+
   const usdDraft = await request("POST", "/imports/commit-purchase", {
     supplier: "Demo Distributor", supplierIdentifier: "SUP-007", invoiceNo: "INV-USD-003",
     invoiceDate: "2026-11-17", currency: "USD", baseCurrency: "PKR", exchangeRate: 280,
@@ -343,7 +429,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
       purchasePrice: 4.5, salePrice: 6.5, batchNumber: "USD-BATCH-003", expiryDate: "2032-12-31" }]
   });
   expect(usdDraft.status).toBe(201);
-  const usdApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(usdDraft.data.draftId), { confirm: true });
+  const usdApproval = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(usdDraft.data.draftId), { confirm: true, reviewed: true });
   expect(usdApproval.status).toBe(200);
   const usdHistory = await request("GET", "/imports/history");
   const usdImport = usdHistory.data.find(record => record.invoiceNo === "INV-USD-003" && record.status === "posted");
