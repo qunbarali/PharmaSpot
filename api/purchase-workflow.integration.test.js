@@ -230,7 +230,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     ...makePurchase("INV-ZIP-SOURCE-DUP"), sourceFiles: [standaloneInvoiceFile]
   });
   expect(duplicateExtractedSource.status).toBe(409);
-  expect(duplicateExtractedSource.data.error).toMatch(/original invoice file has already been used/i);
+  expect(duplicateExtractedSource.data.error).toMatch(/original invoice files has already been used/i);
 
   const sourceFileName = "11111111-1111-4111-8111-111111111111.pdf";
   fs.writeFileSync(path.join(importRoot, sourceFileName), Buffer.from("%PDF-1.4\\nsource invoice fixture\\n"));
