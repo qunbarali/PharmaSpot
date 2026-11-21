@@ -522,6 +522,7 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
     }
     return res.json({ success: true, draftId: draft._id, status: "pending_approval", revision: changes.revision, message: "Draft corrections saved. Inventory has not changed." });
   } catch (error) {
+    if (error && error.errorType === "uniqueViolated") return res.status(409).json({ error: "Another pending purchase already uses this supplier and invoice number. The draft was not changed." });
     console.error("Could not update purchase draft:", error);
     return res.status(500).json({ error: "Could not update the purchase draft safely." });
   }
