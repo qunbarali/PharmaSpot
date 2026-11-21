@@ -328,6 +328,10 @@ function buildPendingPurchaseEditor(draft, refresh) {
     " | " + draft.status + " | revision " + Number(draft.revision || 0)
   ));
 
+  if (draft.status !== "pending_approval") {
+    card.append($('<p class="text-danger m-t-10"></p>').text("This purchase needs manual reconciliation and cannot be edited or approved again from this screen."));
+    return card;
+  }
   const toggle = $('<button class="btn btn-default btn-xs" type="button">Review / edit all fields</button>');
   const editor = $('<div class="m-t-15"></div>').hide();
   toggle.on("click", () => {
