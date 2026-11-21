@@ -172,7 +172,7 @@ function runInvoiceOcr(files) {
             );
             suggestions.find("tbody").append(line);
           });
-          body.append($('<p class="text-warning"></p>').text("Add each detected line to the editable purchase table. You can correct the description, product, paid quantity, bonus/free quantity, purchase price, sale price, batch and expiry before saving the draft."), suggestions);
+          body.append($('<p class="text-warning"></p>').text("Add each detected line to the editable purchase table. Correct the description, product, item code, packing, paid and bonus quantities, purchase and sale prices, gross amount, discounts, taxes, net line total, batch and expiry before saving the draft."), suggestions);
         } else {
           body.append($('<p class="text-warning"></p>').text("No structured invoice lines were detected. Review the extracted text and enter each invoice line manually."));
         }
