@@ -13,8 +13,8 @@ function calculatePurchaseTotal(items) {
   return (Array.isArray(items) ? items : []).reduce((sum, item) => {
     const quantity = Number(item && (item.paidQuantity == null ? item.quantity : item.paidQuantity));
     const price = Number(item && item.purchasePrice);
-    const rawLineTotal = item && (item.lineTotal == null || item.lineTotal === "" ? item.netAmount : item.lineTotal);
-    const lineTotal = rawLineTotal == null || rawLineTotal === "" ? null : Number(rawLineTotal);
+    const rawLineTotal = item && (item.lineTotal == null || (typeof item.lineTotal === "string" && !item.lineTotal.trim()) ? item.netAmount : item.lineTotal);
+    const lineTotal = rawLineTotal == null || (typeof rawLineTotal === "string" && !rawLineTotal.trim()) ? null : Number(rawLineTotal);
     if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0 ||
         (lineTotal !== null && (!Number.isFinite(lineTotal) || lineTotal < 0))) {
       throw new Error("Purchase lines contain an invalid paid quantity, purchase price or reviewed line total.");
@@ -182,7 +182,7 @@ function validatePurchaseDraft(input) {
     const expiryDate = normalizeExpiryDate(item.expiryDate);
     const optionalAmount = key => {
       const raw = item[key];
-      if (raw == null || raw === "") return null;
+      if (raw == null || (typeof raw === "string" && !raw.trim())) return null;
       const value = Number(raw);
       if (!Number.isFinite(value) || value < 0) throw new Error("Invoice line " + key + " must be a non-negative number.");
       return value;
