@@ -245,7 +245,7 @@ function parseDelimitedRow(line, header) {
     /\bprice\b/.test(column) && !/sale|retail|mrp/.test(column)
   );
   const saleIndex = columns.findIndex(column =>
-    /^(?:(?:maximum\\s+)?retail|mrp|rp|sale|sales|selling|srp)(?:\\s+(?:price|rate|value|unit))?(?:\\s+(?:(?:incl|including|inc)\\s+(?:gst|tax)|rs|pkr|inr|usd))*$/.test(column)
+    /^(?:(?:maximum\s+)?retail|mrp|rp|sale|sales|selling|srp)(?:\s+(?:price|rate|value|unit))?(?:\s+(?:(?:incl|including|inc)\s+(?:gst|tax)|rs|pkr|inr|usd))*$/.test(column)
   );
   const bonusIndex = indexFor(/bonus|free|foc|scheme|^bns$/);
   const batchIndex = indexFor(/batch|lot/);
