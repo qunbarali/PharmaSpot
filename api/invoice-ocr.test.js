@@ -62,6 +62,20 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("recognizes dotted Pakistani T.P. and M.R.P. invoice columns", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-DOTTED-TP-01",
+      "Item Code | Product Name | Stock Qty | BNS | T.P. (Rs.) | M.R.P. (Incl. GST) | Batch No. | Exp. Date",
+      "001 | Paracetamol 500mg | 12 | 2 | 14.25 | 20.00 | P-21 | 11/2028"
+    ].join("\\n"));
+    expect(result.rows[0]).toMatchObject({
+      itemCode: "001", productName: "Paracetamol 500mg", quantity: 12,
+      bonusQuantity: 2, purchasePrice: 14.25, salePrice: 20,
+      batchNumber: "P-21", expiryDate: "2028-11-30"
+    });
+  });
+
   test("parses Pakistan distributor stock, BNS, packing and tax columns safely", () => {
     const result = parseInvoiceText([
       "ABC DISTRIBUTORS",
