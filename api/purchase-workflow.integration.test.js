@@ -232,6 +232,36 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     }]
   });
 
+  const originalAuditInsert = audit.auditDB.insert;
+  let completePendingAudit;
+  let auditInsertCaptured;
+  const auditInsertStarted = new Promise(resolve => { auditInsertCaptured = resolve; });
+  audit.auditDB.insert = (_event, callback) => {
+    completePendingAudit = callback;
+    auditInsertCaptured();
+  };
+  let auditPendingRequest;
+  try {
+    auditPendingRequest = request("POST", "/imports/commit-purchase", makePurchase("INV-AUDIT-PENDING"));
+    await auditInsertStarted;
+    const duringAuditPending = await request("GET", "/imports/pending-purchases");
+    const auditPendingDraft = duringAuditPending.data.find(draft => draft.invoiceNo === "INV-AUDIT-PENDING");
+    expect(auditPendingDraft).toMatchObject({ status: "audit_pending" });
+    const blockedWhileAuditPending = await request("POST", "/imports/approve-purchase/" + encodeURIComponent(auditPendingDraft._id), {
+      confirm: true, reviewed: true, reviewedRevision: 0
+    });
+    expect(blockedWhileAuditPending.status).toBe(404);
+    expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+    completePendingAudit(new Error("Simulated audit storage failure."));
+    const auditFailureResponse = await auditPendingRequest;
+    expect(auditFailureResponse.status).toBe(500);
+    const afterAuditFailure = await request("GET", "/imports/pending-purchases");
+    expect(afterAuditFailure.data.find(draft => draft._id === auditPendingDraft._id).status).toBe("audit_needs_review");
+  } finally {
+    audit.auditDB.insert = originalAuditInsert;
+    if (completePendingAudit) completePendingAudit(new Error("Test cleanup audit failure."));
+  }
+
   const zipSourceDraft = await request("POST", "/imports/commit-purchase", {
     ...makePurchase("INV-ZIP-SOURCE"), sourceFiles: [uploadedArchive]
   });
