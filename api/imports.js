@@ -26,6 +26,7 @@ const importsDB = new Datastore({
 });
 importsDB.ensureIndex({ fieldName: "importKey", unique: true, sparse: true });
 importsDB.ensureIndex({ fieldName: "draftKey", unique: true, sparse: true });
+importsDB.ensureIndex({ fieldName: "sourceHashKey", unique: true, sparse: true });
 
 const allowed = new Set([".pdf", ".zip", ".jpg", ".jpeg", ".png", ".webp"]);
 const storage = multer.diskStorage({
@@ -122,6 +123,47 @@ function normalizeSourceFiles(files) {
       sha256
     };
   }).filter(Boolean);
+}
+
+
+function reserveSourceFileHashes(sourceFiles, ownerId) {
+  const hashes = (Array.isArray(sourceFiles) ? sourceFiles : [])
+    .map(file => String(file && file.sha256 || "").trim().toLowerCase())
+    .filter(hash => /^[a-f0-9]{64}$/.test(hash));
+  if (new Set(hashes).size !== hashes.length) {
+    const error = new Error("The same source document was included more than once.");
+    error.code = "duplicate_source_file";
+    return Promise.reject(error);
+  }
+  if (!hashes.length) return Promise.resolve({ reservationId: "", count: 0 });
+  const reservationId = String(ownerId || crypto.randomUUID());
+  return new Promise((resolve, reject) => {
+    let reservedCount = 0;
+    async.eachSeries(hashes, (sha256, next) => {
+      importsDB.insert({
+        type: "source_file_lock",
+        sourceHashKey: sha256,
+        reservationId,
+        ownerId: reservationId,
+        createdAt: new Date().toISOString()
+      }, error => {
+        if (!error) reservedCount += 1;
+        next(error || null);
+      });
+    }, error => {
+      if (!error) return resolve({ reservationId, count: reservedCount });
+      importsDB.remove({ type: "source_file_lock", reservationId }, { multi: true }, removeError => {
+        if (removeError) console.error("Could not release partial invoice source reservations", reservationId, removeError);
+        if (error.errorType === "uniqueViolated") error.code = "duplicate_source_file";
+        reject(error);
+      });
+    });
+  });
+}
+
+function releaseSourceFileHashes(reservationId, callback) {
+  if (!reservationId) return callback(null, 0);
+  importsDB.remove({ type: "source_file_lock", reservationId: String(reservationId) }, { multi: true }, callback);
 }
 
 // Importing supplier documents and changing stock is restricted to the local app host.
@@ -484,13 +526,26 @@ app.post("/commit-purchase", async (req, res) => {
       });
     }
   } catch (_) { return res.status(500).json({ error: "Could not check for duplicate supplier invoices." }); }
+  const draftId = crypto.randomUUID();
+  let sourceReservation;
+  try {
+    sourceReservation = await reserveSourceFileHashes(sourceFiles, draftId);
+  } catch (error) {
+    if (error && (error.code === "duplicate_source_file" || error.errorType === "uniqueViolated")) {
+      return res.status(409).json({ error: "One or more original invoice files have already been reserved by another draft or import. Check purchase history before continuing." });
+    }
+    return res.status(500).json({ error: "Could not reserve the original invoice files safely." });
+  }
   importsDB.insert({
+    _id: draftId,
     type: "purchase_draft", status: "pending_approval", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
     currency, baseCurrency, exchangeRate, exchangeRateDate, items, invoiceTotal, sourceFiles, revision: 0,
     createdAt: new Date().toISOString()
   }, (err, draft) => {
-    if (err && err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
-    if (err) return res.status(500).json({ error: "Could not save purchase for approval." });
+    if (err) return releaseSourceFileHashes(sourceReservation.reservationId, () => {
+      if (err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
+      return res.status(500).json({ error: "Could not save purchase for approval." });
+    });
     writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, {
       supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate,
       lineCount: items.length,
@@ -769,7 +824,7 @@ app.get("/history", async (req, res) => {
   try {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required to view import history." });
-    importsDB.find({}).sort({ createdAt: -1 }).limit(100).exec((err, docs) => {
+    importsDB.find({ type: { $ne: "source_file_lock" } }).sort({ createdAt: -1 }).limit(100).exec((err, docs) => {
       if (err) return res.status(500).json({ error: "Could not load import history." });
       res.json(docs || []);
     });
@@ -777,5 +832,7 @@ app.get("/history", async (req, res) => {
 });
 
 app.isSafeArchiveEntryPath = isSafeArchiveEntryPath;
+app.reserveSourceFileHashes = reserveSourceFileHashes;
+app.releaseSourceFileHashes = releaseSourceFileHashes;
 
 module.exports = app;
