@@ -554,7 +554,7 @@ app.post("/commit-purchase", async (req, res) => {
   }
   importsDB.insert({
     _id: draftId,
-    type: "purchase_draft", status: "pending_approval", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
+    type: "purchase_draft", status: "audit_pending", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
     currency, baseCurrency, exchangeRate, exchangeRateDate, items, invoiceTotal, sourceFiles, revision: 0,
     createdAt: new Date().toISOString()
   }, (err, draft) => {
@@ -568,12 +568,22 @@ app.post("/commit-purchase", async (req, res) => {
       invoiceTotal,
       sourceFiles: sourceFiles.map(file => ({ originalName: file.originalName, size: file.size, sha256: file.sha256 }))
     })
-      .then(() => res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", revision: 0, message: "Purchase saved for approval. Inventory has not changed." }))
+      .then(() => {
+        importsDB.update({ _id: draft._id, status: "audit_pending" }, {
+          $set: { status: "pending_approval", auditRecordedAt: new Date().toISOString() }
+        }, {}, (unlockError, count) => {
+          if (unlockError || !count) return res.status(207).json({
+            success: true, draftId: draft._id, status: "audit_pending", revision: 0,
+            warning: "The draft audit was saved, but the draft could not be unlocked. It remains blocked from stock approval pending administrator review."
+          });
+          return res.status(201).json({ success: true, draftId: draft._id, status: "pending_approval", revision: 0, message: "Purchase saved for approval. Inventory has not changed." });
+        });
+      })
       .catch(() => {
-      importsDB.update({ _id: draft._id, status: "pending_approval" }, {
-        $set: { status: "audit_needs_review", auditWarning: "Draft audit creation failed; manual administrator review is required before any stock approval." }
-      }, {}, () => res.status(500).json({ error: "Purchase draft was saved but its audit record failed. It has been locked against approval for administrator review." }));
-    });
+        importsDB.update({ _id: draft._id, status: "audit_pending" }, {
+          $set: { status: "audit_needs_review", auditWarning: "Draft audit creation failed; manual administrator review is required before any stock approval." }
+        }, {}, () => res.status(500).json({ error: "Purchase draft was saved but its audit record failed. It has been locked against approval for administrator review." }));
+      });
   });
 });
 
@@ -684,7 +694,7 @@ app.get("/pending-purchases", async (req, res) => {
   try {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required." });
-    importsDB.find({ type: "purchase_draft", status: { $in: ["pending_approval", "approving", "approval_needs_reconciliation", "updating", "audit_needs_review"] } }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
+    importsDB.find({ type: "purchase_draft", status: { $in: ["audit_pending", "pending_approval", "approving", "approval_needs_reconciliation", "updating", "audit_needs_review"] } }).sort({ createdAt: -1 }).limit(100).exec((err, drafts) => {
       if (err) return res.status(500).json({ error: "Could not load pending purchases." });
       res.json(drafts || []);
     });
