@@ -155,6 +155,21 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(importsAPI.isSafeArchiveEntryPath("C:\\Windows\\outside.jpg")).toBe(false);
   expect(importsAPI.isSafeArchiveEntryPath("\\\\server\\share\\outside.jpg")).toBe(false);
   expect(importsAPI.isSafeArchiveEntryPath("/etc/passwd")).toBe(false);
+
+  const sharedSourceHash = "a".repeat(64);
+  const concurrentReservations = await Promise.allSettled([
+    importsAPI.reserveSourceFileHashes([{ sha256: sharedSourceHash }], "hash-lock-owner-a"),
+    importsAPI.reserveSourceFileHashes([{ sha256: sharedSourceHash }], "hash-lock-owner-b")
+  ]);
+  expect(concurrentReservations.filter(result => result.status === "fulfilled")).toHaveLength(1);
+  expect(concurrentReservations.filter(result => result.status === "rejected" && result.reason.code === "duplicate_source_file")).toHaveLength(1);
+  const activeReservation = concurrentReservations.find(result => result.status === "fulfilled").value;
+  const historyWithReservation = await request("GET", "/imports/history");
+  expect(historyWithReservation.data.some(record => record.type === "source_file_lock")).toBe(false);
+  await new Promise((resolve, reject) => importsAPI.releaseSourceFileHashes(activeReservation.reservationId, error => error ? reject(error) : resolve()));
+  await expect(importsAPI.reserveSourceFileHashes([
+    { sha256: "b".repeat(64) }, { sha256: "b".repeat(64) }
+  ], "hash-lock-duplicate")).rejects.toMatchObject({ code: "duplicate_source_file" });
   expect((await request("POST", "/imports/upload", {}, null)).status).toBe(401);
   expect((await request("POST", "/imports/ocr/not-a-file.pdf", undefined, null)).status).toBe(401);
   expect((await request("POST", "/imports/assign-image", { productId, storedName: "not-a-file.jpg" }, null)).status).toBe(401);
