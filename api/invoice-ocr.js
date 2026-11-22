@@ -222,7 +222,12 @@ function parseLabeledRow(line) {
 
 function parseDelimitedRow(line, header) {
   if (!line.includes("|") || !header || !header.includes("|")) return null;
-  const columns = header.split("|").map(value => value.trim().toLowerCase());
+  const columns = header.split("|").map(value => value.trim().toLowerCase()
+    .replace(/\./g, "")
+    .replace(/[()[\]{}]/g, " ")
+    .replace(/[_/+-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim());
   const values = line.split("|").map(value => value.trim());
   if (values.length < 3) return null;
   const indexFor = pattern => columns.findIndex(column => pattern.test(column));
@@ -234,13 +239,13 @@ function parseDelimitedRow(line, header) {
     /\b(?:qty|quantity|stock)\b/.test(column) && !/(?:bonus|free|foc|scheme)/.test(column)
   );
   let purchaseIndex = columns.findIndex(column =>
-    /purchase|cost|unit\s*price|rate|trade\s*price|\btp\b/.test(column) && !/sale|retail|mrp/.test(column)
+    /purchase|cost|unit\s*price|rate|trade\s*price|\btp\b|\bptr\b/.test(column) && !/sale|retail|mrp/.test(column)
   );
   if (purchaseIndex < 0) purchaseIndex = columns.findIndex(column =>
     /\bprice\b/.test(column) && !/sale|retail|mrp/.test(column)
   );
   const saleIndex = columns.findIndex(column =>
-    /^(?:sale|sales|retail|mrp)(?:\s*(?:price|rate))?$/.test(column) && !/(?:tax|discount|amount)/.test(column)
+    /^(?:(?:maximum\\s+)?retail|mrp|rp|sale|sales|selling|srp)(?:\\s+(?:price|rate|value|unit))?(?:\\s+(?:(?:incl|including|inc)\\s+(?:gst|tax)|rs|pkr|inr|usd))*$/.test(column)
   );
   const bonusIndex = indexFor(/bonus|free|foc|scheme|^bns$/);
   const batchIndex = indexFor(/batch|lot/);
