@@ -234,6 +234,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
 
   const originalAuditInsert = audit.auditDB.insert;
   let completePendingAudit;
+  let auditCompleted = false;
   let auditInsertCaptured;
   const auditInsertStarted = new Promise(resolve => { auditInsertCaptured = resolve; });
   audit.auditDB.insert = (_event, callback) => {
@@ -252,6 +253,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     });
     expect(blockedWhileAuditPending.status).toBe(404);
     expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
+    auditCompleted = true;
     completePendingAudit(new Error("Simulated audit storage failure."));
     const auditFailureResponse = await auditPendingRequest;
     expect(auditFailureResponse.status).toBe(500);
@@ -259,7 +261,7 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
     expect(afterAuditFailure.data.find(draft => draft._id === auditPendingDraft._id).status).toBe("audit_needs_review");
   } finally {
     audit.auditDB.insert = originalAuditInsert;
-    if (completePendingAudit) completePendingAudit(new Error("Test cleanup audit failure."));
+    if (completePendingAudit && !auditCompleted) completePendingAudit(new Error("Test cleanup audit failure."));
   }
 
   const zipSourceDraft = await request("POST", "/imports/commit-purchase", {
