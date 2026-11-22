@@ -68,7 +68,7 @@ describe("invoice OCR text parsing", () => {
       "Invoice No: INV-DOTTED-TP-01",
       "Item Code | Product Name | Stock Qty | BNS | T.P. (Rs.) | M.R.P. (Incl. GST) | Batch No. | Exp. Date",
       "001 | Paracetamol 500mg | 12 | 2 | 14.25 | 20.00 | P-21 | 11/2028"
-    ].join("\\n"));
+    ].join("\n"));
     expect(result.rows[0]).toMatchObject({
       itemCode: "001", productName: "Paracetamol 500mg", quantity: 12,
       bonusQuantity: 2, purchasePrice: 14.25, salePrice: 20,
