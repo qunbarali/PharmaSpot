@@ -126,6 +126,22 @@ function normalizeSourceFiles(files) {
 }
 
 
+function cleanupOrphanedSourceFileHashes() {
+  const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  return new Promise((resolve, reject) => {
+    importsDB.find({ type: "source_file_lock", createdAt: { $lt: cutoff } }, (findError, locks) => {
+      if (findError) return reject(findError);
+      async.eachSeries(locks || [], (lock, next) => {
+        importsDB.findOne({ _id: lock.ownerId }, (ownerError, owner) => {
+          if (ownerError) return next(ownerError);
+          if (owner) return next();
+          importsDB.remove({ _id: lock._id, type: "source_file_lock" }, {}, removeError => next(removeError || null));
+        });
+      }, error => error ? reject(error) : resolve());
+    });
+  });
+}
+
 function reserveSourceFileHashes(sourceFiles, ownerId) {
   const hashes = (Array.isArray(sourceFiles) ? sourceFiles : [])
     .map(file => String(file && file.sha256 || "").trim().toLowerCase())
@@ -137,7 +153,7 @@ function reserveSourceFileHashes(sourceFiles, ownerId) {
   }
   if (!hashes.length) return Promise.resolve({ reservationId: "", count: 0 });
   const reservationId = String(ownerId || crypto.randomUUID());
-  return new Promise((resolve, reject) => {
+  return cleanupOrphanedSourceFileHashes().then(() => new Promise((resolve, reject) => {
     let reservedCount = 0;
     async.eachSeries(hashes, (sha256, next) => {
       importsDB.insert({
@@ -158,7 +174,7 @@ function reserveSourceFileHashes(sourceFiles, ownerId) {
         reject(error);
       });
     });
-  });
+  }));
 }
 
 function releaseSourceFileHashes(reservationId, callback) {
