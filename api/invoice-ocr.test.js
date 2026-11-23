@@ -240,6 +240,20 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("does not attach invoice total dates as batch expiry continuations", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Item Qty Purchase Sale Batch Expiry",
+      "Paracetamol 500mg 10 12.50 15.00",
+      "Grand Total: 12/2027"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].batchNumber).toBe("");
+    expect(result.rows[0].expiryDate).toBe("");
+    expect(result.fields.invoiceTotal).toBeNull();
+  });
+
   test("normalizes OCR whitespace and bounds output", () => {
     expect(normalizeText("  ABC  \r\n\r\n\r\n  123  ")).toBe("ABC\n\n 123");
     expect(normalizeText("x".repeat(250000))).toHaveLength(200000);
