@@ -201,6 +201,45 @@ describe("invoice OCR text parsing", () => {
     expect(result.rows[0]).toMatchObject({ productName: "Cetirizine 10mg", additionalTaxAmount: 0.5 });
   });
 
+  test("joins wrapped product descriptions to numeric invoice columns without merging adjacent rows", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Item | Description | Qty | Purchase | Sale | Batch | Expiry",
+      "Paracetamol 500mg",
+      "10 12.50 15.00 BATCH-01 12/2027",
+      "Amoxicillin 250mg 5 8.25 12.00 B-20 11/2028"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows[0]).toMatchObject({
+      productName: "Paracetamol 500mg", quantity: 10,
+      purchasePrice: 12.5, salePrice: 15,
+      batchNumber: "BATCH-01", expiryDate: "2027-12-31"
+    });
+    expect(result.rows[1]).toMatchObject({
+      productName: "Amoxicillin 250mg", quantity: 5,
+      purchasePrice: 8.25, salePrice: 12,
+      batchNumber: "B-20", expiryDate: "2028-11-30"
+    });
+  });
+
+  test("attaches a separate batch and expiry continuation to its invoice row", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Item Qty Purchase Sale Batch Expiry",
+      "Paracetamol 500mg 10 12.50 15.00",
+      "Batch: BATCH-01 Expiry: 12/2027"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      productName: "Paracetamol 500mg", quantity: 10,
+      purchasePrice: 12.5, salePrice: 15,
+      batchNumber: "BATCH-01", rawExpiry: "12/2027",
+      expiryDate: "2027-12-31"
+    });
+  });
+
   test("normalizes OCR whitespace and bounds output", () => {
     expect(normalizeText("  ABC  \r\n\r\n\r\n  123  ")).toBe("ABC\n\n 123");
     expect(normalizeText("x".repeat(250000))).toHaveLength(200000);
