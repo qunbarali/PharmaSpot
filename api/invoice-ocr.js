@@ -489,7 +489,7 @@ function hasStructuredInvoiceText(raw, hasRotatedText = false) {
 
 function parseBatchExpiryContinuation(line) {
   const value = String(line || "").trim();
-  if (!value) return null;
+  if (!value || isInvoiceMetadataLine(value)) return null;
   const dates = extractDateTokens(value);
   if (!dates.length) return null;
   const expiry = dates[dates.length - 1];
