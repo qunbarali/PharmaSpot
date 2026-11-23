@@ -487,6 +487,29 @@ function hasStructuredInvoiceText(raw, hasRotatedText = false) {
   return parseInvoiceText(text).rows.length > 0;
 }
 
+function parseBatchExpiryContinuation(line) {
+  const value = String(line || "").trim();
+  if (!value) return null;
+  const dates = extractDateTokens(value);
+  if (!dates.length) return null;
+  const expiry = dates[dates.length - 1];
+  const explicitBatch = value.match(/(?:batch|lot)\s*(?:no\.?|number|#)?\s*[:=]\s*([A-Z0-9][A-Z0-9/-]*)/i);
+  const withoutDate = value.slice(0, expiry.index) + " " + value.slice(expiry.end);
+  const trailingBatch = withoutDate.trim().match(/(?:^|\s)([A-Z][A-Z0-9/-]{1,})\s*$/i);
+  const batchNumber = explicitBatch ? explicitBatch[1] : (trailingBatch ? trailingBatch[1] : "");
+  const hasExpiryLabel = /(?:exp(?:iry|y)?(?:\s*date)?|use\s*by|best\s*before)/i.test(value);
+  if (!batchNumber && !hasExpiryLabel) return null;
+  return {
+    batchNumber,
+    rawExpiry: expiry.value,
+    expiryDate: expiry.iso || expiry.value
+  };
+}
+
+function isInvoiceMetadataLine(line) {
+  return /\b(?:supplier|vendor|distributor|invoice|bill\s*(?:no|number|date)|invoice\s*(?:no|number|date)|ntn|gstin|tax\s*id|grand\s*total|invoice\s*total|net\s*payable|amount\s*due|balance\s*due|subtotal|total\s*tax)\b/i.test(String(line || ""));
+}
+
 function parseInvoiceText(raw) {
   const text = normalizeText(raw);
   const lines = text.split("\n").map(line => line.trim()).filter(Boolean).slice(0, MAX_LINES);
@@ -526,14 +549,44 @@ function parseInvoiceText(raw) {
   const rows = [];
   let headerContext = "";
   let delimitedHeader = "";
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const isLabelledLine = /(?:product|item|description)\s*[:=]/i.test(line) || /(?:qty|quantity)\s*[:=]/i.test(line);
     if (!isLabelledLine && /\b(item|product|description|medicine|code)\b/i.test(line) && /\b(qty|quantity|stock)\b/i.test(line)) {
       headerContext = line;
       if (line.includes("|")) delimitedHeader = line;
       continue;
     }
-    const row = parseDelimitedRow(line, delimitedHeader) || parseLabeledRow(line) || parseLooseRow(line, headerContext);
+
+    const parseRow = value => parseDelimitedRow(value, delimitedHeader) || parseLabeledRow(value) || parseLooseRow(value, headerContext);
+    let row = parseRow(line);
+
+    // Distributor invoices often wrap the medicine description onto one line and
+    // put the numeric columns on the next. Join only numeric-leading continuations.
+    if (!row && index + 1 < lines.length && !isInvoiceMetadataLine(line)) {
+      const nextLine = lines[index + 1];
+      const nextLooksLikeNumericContinuation = /^\s*(?:\d+(?:[,.]\d+)?|qty\s*[:=])/i.test(nextLine);
+      if (nextLooksLikeNumericContinuation && !isInvoiceMetadataLine(nextLine)) {
+        row = parseRow(line + " " + nextLine);
+        if (row) index += 1;
+      }
+    }
+
+    // Batch and expiry are sometimes printed below an otherwise complete row.
+    if (row && (!row.batchNumber || !row.expiryDate) && index + 1 < lines.length) {
+      const continuation = parseBatchExpiryContinuation(lines[index + 1]);
+      if (continuation) {
+        row = {
+          ...row,
+          batchNumber: row.batchNumber || continuation.batchNumber,
+          rawExpiry: row.rawExpiry || continuation.rawExpiry,
+          expiryDate: row.expiryDate || continuation.expiryDate,
+          rawLine: (row.rawLine + " " + lines[index + 1]).slice(0, 300)
+        };
+        index += 1;
+      }
+    }
+
     if (row && !rows.some(existing => existing.rawLine === row.rawLine)) rows.push(row);
     if (rows.length >= 500) break;
   }
