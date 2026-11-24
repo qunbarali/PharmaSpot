@@ -82,6 +82,20 @@ describe("invoice OCR text parsing", () => {
     expect(result.rows[0].reviewFlags).toEqual([]);
   });
 
+  test("treats a supplier tax identifier as optional metadata, not a posting blocker", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Invoice No: INV-OPTIONAL-ID",
+      "Invoice Date: 23-11-2026",
+      "Currency: PKR",
+      "Item | Qty | TP | MRP | Batch No | Expiry Date",
+      "Paracetamol 500mg | 10 | 12.50 | 20.00 | B-01 | 12/2027"
+    ].join("\n"));
+
+    expect(result.reviewSummary.missingInvoiceFields).toEqual([]);
+    expect(result.reviewSummary.optionalInvoiceFields).toContain("supplier identifier (NTN/GST or distributor code)");
+  });
+
   test("recognizes common distributor free-quantity labels", () => {
     const bonus = parseInvoiceText("Supplier\nProduct: Cetirizine 10mg; Qty: 10; Purchase: 3; Bonus Qty: 2; Batch: C-10; Expiry: 11/2028");
     const foc = parseInvoiceText("Supplier\nProduct: Vitamin C; Qty: 6; Purchase: 4; FOC: 1; Batch: V-01; Expiry: 10/2028");
