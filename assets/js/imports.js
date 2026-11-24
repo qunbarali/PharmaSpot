@@ -131,8 +131,20 @@ function runInvoiceOcr(files) {
           updateImportExchangeRate();
         }
         if (fields.invoiceTotal != null && !$("#importInvoiceTotal").val()) $("#importInvoiceTotal").val(fields.invoiceTotal);
+        const reviewSummary = result.reviewSummary || {};
+        const missingInvoiceFields = Array.isArray(reviewSummary.missingInvoiceFields) ? reviewSummary.missingInvoiceFields : [];
+        const rowsNeedingReview = Number(reviewSummary.rowsNeedingReview || 0);
+        if (missingInvoiceFields.length || rowsNeedingReview) {
+          body.append($('<p class="text-warning"></p>').text(
+            "Review checklist — missing invoice fields: " + (missingInvoiceFields.join(", ") || "none") +
+            "; product rows with missing/invalid sale price, batch or expiry: " + rowsNeedingReview +
+            ". These values must be checked against the original document before approval."
+          ));
+        } else {
+          body.append($('<p class="text-success"></p>').text("All parsed required invoice and batch fields were detected. Still verify every value and product match against the original document."));
+        }
         if (result.rows && result.rows.length) {
-          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th></th></tr></thead><tbody></tbody></table>');
+          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th>Review flags</th><th></th></tr></thead><tbody></tbody></table>');
           result.rows.forEach(invoiceRow => {
             const description = invoiceRow.productName || invoiceRow.description || "";
             const suggestedId = bestInvoiceProductMatch(description);
@@ -170,6 +182,10 @@ function runInvoiceOcr(files) {
               $("<td></td>").text(invoiceRow.salePrice ?? "Not detected"),
               $("<td></td>").text(invoiceRow.batchNumber || "Not detected"),
               $("<td></td>").text(invoiceRow.expiryDate || "Not detected"),
+              $("<td></td>").text([
+                ...(Array.isArray(invoiceRow.reviewFlags) ? invoiceRow.reviewFlags : []),
+                "confirm product match and all extracted values"
+              ].join("; ")),
               $("<td></td>").append(add)
             );
             suggestions.find("tbody").append(line);
