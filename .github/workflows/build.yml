@@ -37,6 +37,8 @@ jobs:
         run: npm ci
 
       - name: Run automated tests
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
         run: npm test -- --runInBand
 
       - name: Install Linux packaging dependencies
