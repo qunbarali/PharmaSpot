@@ -603,8 +603,9 @@ function parseInvoiceText(raw) {
   }
 
   const missingInvoiceFields = [];
+  const optionalInvoiceFields = [];
   if (!supplier) missingInvoiceFields.push("supplier");
-  if (!supplierIdentifier) missingInvoiceFields.push("supplier identifier (NTN/GST or distributor code)");
+  if (!supplierIdentifier) optionalInvoiceFields.push("supplier identifier (NTN/GST or distributor code)");
   if (!invoiceNo) missingInvoiceFields.push("invoice number");
   if (!invoiceDate || !normalizeDate(invoiceDate)) missingInvoiceFields.push("valid invoice date");
   if (!currency) missingInvoiceFields.push("invoice currency");
@@ -614,6 +615,7 @@ function parseInvoiceText(raw) {
     rows,
     reviewSummary: {
       missingInvoiceFields,
+      optionalInvoiceFields,
       rowsNeedingReview: rows.filter(row => row.reviewFlags && row.reviewFlags.length).length,
       totalRows: rows.length
     },
