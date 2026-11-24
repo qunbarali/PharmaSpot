@@ -198,14 +198,19 @@ function makeRow(description, values) {
     batchNumber,
     rawExpiry, expiryDate,
     fieldConfidence: {
-      itemCode: itemCode ? "medium" : "none",
-      packing: packing ? "medium" : "none",
-      bonusQuantity: bonusQuantity > 0 ? "medium" : "none",
+      productName: sourceConfidence,
+      quantity: sourceConfidence,
+      purchasePrice: sourceConfidence,
+      itemCode: itemCode ? sourceConfidence : "none",
+      packing: packing ? sourceConfidence : "none",
+      bonusQuantity: bonusQuantity > 0 ? sourceConfidence : "none",
       salePrice: salePrice === null ? "none" : sourceConfidence,
       batchNumber: batchNumber ? sourceConfidence : "none",
       expiryDate: expiryDate && normalizeDate(expiryDate) ? sourceConfidence : "none",
-      discount: discountPercent !== null || discountAmount !== null ? "medium" : "none",
-      tax: salesTaxAmount !== null || salesTaxPercent !== null || additionalTaxAmount !== null ? "medium" : "none"
+      grossAmount: grossAmount === null ? "none" : sourceConfidence,
+      discount: discountPercent !== null || discountAmount !== null ? sourceConfidence : "none",
+      tax: salesTaxAmount !== null || salesTaxPercent !== null || additionalTaxAmount !== null ? sourceConfidence : "none",
+      lineTotal: (Number.isFinite(values.lineTotal) || netAmount !== null) ? sourceConfidence : "none"
     },
     reviewFlags,
     warnings: ["Confirm all extracted values against the original invoice before posting.", ...reviewFlags.map(field => "Missing or invalid " + field + ".")],
@@ -612,6 +617,14 @@ function parseInvoiceText(raw) {
   return {
     text,
     fields: { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, invoiceTotal },
+    fieldConfidence: {
+      supplier: supplier ? "medium" : "none",
+      supplierIdentifier: supplierIdentifier ? "medium" : "none",
+      invoiceNo: invoiceNo ? "medium" : "none",
+      invoiceDate: invoiceDate && normalizeDate(invoiceDate) ? "medium" : "none",
+      currency: currency ? "medium" : "none",
+      invoiceTotal: invoiceTotal === null ? "none" : "medium"
+    },
     rows,
     reviewSummary: {
       missingInvoiceFields,
