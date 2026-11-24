@@ -59,7 +59,11 @@ describe("invoice OCR text parsing", () => {
     });
     expect(result.rows[0].reviewFlags).toEqual(["sale price", "batch number", "valid expiry date"]);
     expect(result.rows[0].fieldConfidence).toMatchObject({
+      productName: "medium", quantity: "medium", purchasePrice: "medium",
       salePrice: "none", batchNumber: "none", expiryDate: "none"
+    });
+    expect(result.fieldConfidence).toMatchObject({
+      supplier: "medium", invoiceNo: "medium", invoiceDate: "medium", currency: "medium"
     });
   });
 
@@ -80,6 +84,10 @@ describe("invoice OCR text parsing", () => {
       totalRows: 1
     });
     expect(result.rows[0].reviewFlags).toEqual([]);
+    expect(result.rows[0].fieldConfidence).toMatchObject({
+      productName: "medium", quantity: "medium", purchasePrice: "medium",
+      salePrice: "medium", batchNumber: "medium", expiryDate: "medium"
+    });
   });
 
   test("treats a supplier tax identifier as optional metadata, not a posting blocker", () => {
