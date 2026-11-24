@@ -180,6 +180,7 @@ function makeRow(description, values) {
   const netAmount = explicit.netAmount ?? values.netAmount ?? null;
   const salePrice = Number.isFinite(values.salePrice) ? values.salePrice : null;
   const batchNumber = String(values.batchNumber || "").trim().slice(0, 80);
+  // This is structural parser confidence (labeled/table vs loose row), not Tesseract word confidence.
   const sourceConfidence = values.confidence || "low";
   const reviewFlags = [];
   if (salePrice === null) reviewFlags.push("sale price");
