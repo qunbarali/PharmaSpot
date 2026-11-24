@@ -178,27 +178,38 @@ function makeRow(description, values) {
   const salesTaxAmount = explicit.salesTaxAmount ?? values.salesTaxAmount ?? null;
   const additionalTaxAmount = explicit.additionalTaxAmount ?? values.additionalTaxAmount ?? null;
   const netAmount = explicit.netAmount ?? values.netAmount ?? null;
+  const salePrice = Number.isFinite(values.salePrice) ? values.salePrice : null;
+  const batchNumber = String(values.batchNumber || "").trim().slice(0, 80);
+  const sourceConfidence = values.confidence || "low";
+  const reviewFlags = [];
+  if (salePrice === null) reviewFlags.push("sale price");
+  if (!batchNumber) reviewFlags.push("batch number");
+  if (!expiryDate || !normalizeDate(expiryDate)) reviewFlags.push("valid expiry date");
   return {
     description: productName, productName,
     itemCode, packing,
     quantity: values.quantity, paidQuantity: values.quantity,
     bonusQuantity, freeQuantity: bonusQuantity,
     purchasePrice: values.purchasePrice, rate: values.purchasePrice, unitPrice: values.purchasePrice,
-    salePrice: Number.isFinite(values.salePrice) ? values.salePrice : null,
+    salePrice,
     grossAmount, discountPercent, discountAmount, salesTaxPercent,
     salesTaxAmount, additionalTaxAmount, netAmount,
     lineTotal: Number.isFinite(values.lineTotal) ? values.lineTotal : (netAmount ?? null),
-    batchNumber: String(values.batchNumber || "").trim().slice(0, 80),
+    batchNumber,
     rawExpiry, expiryDate,
     fieldConfidence: {
       itemCode: itemCode ? "medium" : "none",
       packing: packing ? "medium" : "none",
       bonusQuantity: bonusQuantity > 0 ? "medium" : "none",
+      salePrice: salePrice === null ? "none" : sourceConfidence,
+      batchNumber: batchNumber ? sourceConfidence : "none",
+      expiryDate: expiryDate && normalizeDate(expiryDate) ? sourceConfidence : "none",
       discount: discountPercent !== null || discountAmount !== null ? "medium" : "none",
       tax: salesTaxAmount !== null || salesTaxPercent !== null || additionalTaxAmount !== null ? "medium" : "none"
     },
-    warnings: ["Confirm all extracted values against the original invoice before posting."],
-    confidence: values.confidence || "low", needsReview: true, rawLine
+    reviewFlags,
+    warnings: ["Confirm all extracted values against the original invoice before posting.", ...reviewFlags.map(field => "Missing or invalid " + field + ".")],
+    confidence: sourceConfidence, needsReview: true, rawLine
   };
 }
 
@@ -591,10 +602,21 @@ function parseInvoiceText(raw) {
     if (rows.length >= 500) break;
   }
 
+  const missingInvoiceFields = [];
+  if (!supplier) missingInvoiceFields.push("supplier");
+  if (!supplierIdentifier) missingInvoiceFields.push("supplier identifier (NTN/GST or distributor code)");
+  if (!invoiceNo) missingInvoiceFields.push("invoice number");
+  if (!invoiceDate || !normalizeDate(invoiceDate)) missingInvoiceFields.push("valid invoice date");
+  if (!currency) missingInvoiceFields.push("invoice currency");
   return {
     text,
     fields: { supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, invoiceTotal },
     rows,
+    reviewSummary: {
+      missingInvoiceFields,
+      rowsNeedingReview: rows.filter(row => row.reviewFlags && row.reviewFlags.length).length,
+      totalRows: rows.length
+    },
     reviewRequired: true,
     warning: "OCR output is an unapproved draft. Confirm supplier identifiers, invoice number/date/currency/payable total, product mapping, every quantity and price, line discounts and taxes, batch number and expiry date against the original document before saving or approving."
   };
