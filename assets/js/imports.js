@@ -133,12 +133,14 @@ function runInvoiceOcr(files) {
         if (fields.invoiceTotal != null && !$("#importInvoiceTotal").val()) $("#importInvoiceTotal").val(fields.invoiceTotal);
         const reviewSummary = result.reviewSummary || {};
         const missingInvoiceFields = Array.isArray(reviewSummary.missingInvoiceFields) ? reviewSummary.missingInvoiceFields : [];
+        const optionalInvoiceFields = Array.isArray(reviewSummary.optionalInvoiceFields) ? reviewSummary.optionalInvoiceFields : [];
         const rowsNeedingReview = Number(reviewSummary.rowsNeedingReview || 0);
-        if (missingInvoiceFields.length || rowsNeedingReview) {
+        if (missingInvoiceFields.length || rowsNeedingReview || optionalInvoiceFields.length) {
           body.append($('<p class="text-warning"></p>').text(
-            "Review checklist — missing invoice fields: " + (missingInvoiceFields.join(", ") || "none") +
+            "Review checklist — required invoice fields missing: " + (missingInvoiceFields.join(", ") || "none") +
+            "; optional metadata not detected: " + (optionalInvoiceFields.join(", ") || "none") +
             "; product rows with missing/invalid sale price, batch or expiry: " + rowsNeedingReview +
-            ". These values must be checked against the original document before approval."
+            ". Check the original document before approval."
           ));
         } else {
           body.append($('<p class="text-success"></p>').text("All parsed required invoice and batch fields were detected. Still verify every value and product match against the original document."));
