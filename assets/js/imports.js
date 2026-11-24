@@ -132,6 +132,15 @@ function runInvoiceOcr(files) {
         }
         if (fields.invoiceTotal != null && !$("#importInvoiceTotal").val()) $("#importInvoiceTotal").val(fields.invoiceTotal);
         const reviewSummary = result.reviewSummary || {};
+        const invoiceConfidence = result.fieldConfidence || {};
+        body.append($('<p class="small text-muted"></p>').text(
+          "Metadata confidence — supplier: " + (invoiceConfidence.supplier || "none") +
+          ", supplier ID: " + (invoiceConfidence.supplierIdentifier || "none") +
+          ", invoice number: " + (invoiceConfidence.invoiceNo || "none") +
+          ", date: " + (invoiceConfidence.invoiceDate || "none") +
+          ", currency: " + (invoiceConfidence.currency || "none") +
+          ", payable total: " + (invoiceConfidence.invoiceTotal || "none")
+        ));
         const missingInvoiceFields = Array.isArray(reviewSummary.missingInvoiceFields) ? reviewSummary.missingInvoiceFields : [];
         const optionalInvoiceFields = Array.isArray(reviewSummary.optionalInvoiceFields) ? reviewSummary.optionalInvoiceFields : [];
         const rowsNeedingReview = Number(reviewSummary.rowsNeedingReview || 0);
@@ -146,7 +155,7 @@ function runInvoiceOcr(files) {
           body.append($('<p class="text-success"></p>').text("All parsed required invoice and batch fields were detected. Still verify every value and product match against the original document."));
         }
         if (result.rows && result.rows.length) {
-          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th>Review flags</th><th></th></tr></thead><tbody></tbody></table>');
+          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th>Field confidence</th><th>Review flags</th><th></th></tr></thead><tbody></tbody></table>');
           result.rows.forEach(invoiceRow => {
             const description = invoiceRow.productName || invoiceRow.description || "";
             const suggestedId = bestInvoiceProductMatch(description);
@@ -184,6 +193,8 @@ function runInvoiceOcr(files) {
               $("<td></td>").text(invoiceRow.salePrice ?? "Not detected"),
               $("<td></td>").text(invoiceRow.batchNumber || "Not detected"),
               $("<td></td>").text(invoiceRow.expiryDate || "Not detected"),
+              $("<td></td>").text(["productName", "quantity", "purchasePrice", "salePrice", "batchNumber", "expiryDate"]
+                .map(field => field + ": " + ((invoiceRow.fieldConfidence || {})[field] || "none")).join("; ")),
               $("<td></td>").text([
                 ...(Array.isArray(invoiceRow.reviewFlags) ? invoiceRow.reviewFlags : []),
                 "confirm product match and all extracted values"
