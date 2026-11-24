@@ -134,7 +134,7 @@ function runInvoiceOcr(files) {
         const reviewSummary = result.reviewSummary || {};
         const invoiceConfidence = result.fieldConfidence || {};
         body.append($('<p class="small text-muted"></p>').text(
-          "Metadata confidence — supplier: " + (invoiceConfidence.supplier || "none") +
+          "Metadata parser confidence (structure-based, not OCR certainty) — supplier: " + (invoiceConfidence.supplier || "none") +
           ", supplier ID: " + (invoiceConfidence.supplierIdentifier || "none") +
           ", invoice number: " + (invoiceConfidence.invoiceNo || "none") +
           ", date: " + (invoiceConfidence.invoiceDate || "none") +
@@ -155,7 +155,7 @@ function runInvoiceOcr(files) {
           body.append($('<p class="text-success"></p>').text("All parsed required invoice and batch fields were detected. Still verify every value and product match against the original document."));
         }
         if (result.rows && result.rows.length) {
-          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th>Field confidence</th><th>Review flags</th><th></th></tr></thead><tbody></tbody></table>');
+          const suggestions = $('<table class="table table-condensed table-bordered"><thead><tr><th>Invoice description</th><th>Match product</th><th>Paid qty</th><th>Bonus / free qty</th><th>Purchase</th><th>Sale</th><th>Batch</th><th>Expiry</th><th>Field parse confidence</th><th>Review flags</th><th></th></tr></thead><tbody></tbody></table>');
           result.rows.forEach(invoiceRow => {
             const description = invoiceRow.productName || invoiceRow.description || "";
             const suggestedId = bestInvoiceProductMatch(description);
