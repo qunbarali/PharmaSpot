@@ -41,6 +41,47 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("marks missing sale price, batch and expiry for human review", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Supplier ID: SUP-01",
+      "Invoice No: INV-REVIEW-001",
+      "Invoice Date: 23-11-2026",
+      "Currency: PKR",
+      "Item | Qty | TP | MRP | Batch No | Expiry Date",
+      "Paracetamol 500mg | 10 | 12.50 | | |"
+    ].join("\n"));
+
+    expect(result.reviewSummary).toMatchObject({
+      missingInvoiceFields: [],
+      rowsNeedingReview: 1,
+      totalRows: 1
+    });
+    expect(result.rows[0].reviewFlags).toEqual(["sale price", "batch number", "valid expiry date"]);
+    expect(result.rows[0].fieldConfidence).toMatchObject({
+      salePrice: "none", batchNumber: "none", expiryDate: "none"
+    });
+  });
+
+  test("does not flag complete supplier and batch fields as missing", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Supplier ID: SUP-01",
+      "Invoice No: INV-REVIEW-002",
+      "Invoice Date: 23-11-2026",
+      "Currency: PKR",
+      "Item | Qty | TP | MRP | Batch No | Expiry Date",
+      "Paracetamol 500mg | 10 | 12.50 | 20.00 | B-01 | 12/2027"
+    ].join("\n"));
+
+    expect(result.reviewSummary).toMatchObject({
+      missingInvoiceFields: [],
+      rowsNeedingReview: 0,
+      totalRows: 1
+    });
+    expect(result.rows[0].reviewFlags).toEqual([]);
+  });
+
   test("recognizes common distributor free-quantity labels", () => {
     const bonus = parseInvoiceText("Supplier\nProduct: Cetirizine 10mg; Qty: 10; Purchase: 3; Bonus Qty: 2; Batch: C-10; Expiry: 11/2028");
     const foc = parseInvoiceText("Supplier\nProduct: Vitamin C; Qty: 6; Purchase: 4; FOC: 1; Batch: V-01; Expiry: 10/2028");
