@@ -131,6 +131,27 @@ function runInvoiceOcr(files) {
           updateImportExchangeRate();
         }
         if (fields.invoiceTotal != null && !$("#importInvoiceTotal").val()) $("#importInvoiceTotal").val(fields.invoiceTotal);
+        const extraction = result.extraction || {};
+        const ocrConfidence = Number.isFinite(Number(extraction.ocrConfidence)) && extraction.ocrConfidence !== null
+          ? Number(extraction.ocrConfidence).toFixed(1) + "%" : "not available";
+        let extractionMessage = "";
+        if (extraction.kind === "pdf") {
+          extractionMessage = extraction.ocrPages > 0
+            ? "PDF extraction — " + (extraction.nativeTextPages || 0) + "/" + (extraction.pageCount || 0) +
+              " pages contained native text; " + extraction.ocrPages + " page(s) used scanned-page OCR; Tesseract confidence: " +
+              ocrConfidence + " (" + (extraction.ocrConfidenceBand || "unrated") + ")."
+            : "PDF extraction — native text layer used on " + (extraction.nativeTextPages || 0) +
+              "/" + (extraction.pageCount || 0) + " page(s); scanned-page OCR was not needed.";
+        } else if (extraction.kind === "image-ocr") {
+          extractionMessage = "Image OCR — Tesseract confidence: " + ocrConfidence +
+            " (" + (extraction.ocrConfidenceBand || "unrated") + "); recognized words: " +
+            (extraction.ocrWordCount || 0) + ".";
+        }
+        if (extractionMessage) {
+          body.append($('<p class="small text-info"></p>').text(
+            extractionMessage + " This is page/document-level OCR engine confidence, not a guarantee that individual invoice fields are correct."
+          ));
+        }
         const reviewSummary = result.reviewSummary || {};
         const invoiceConfidence = result.fieldConfidence || {};
         body.append($('<p class="small text-muted"></p>').text(
