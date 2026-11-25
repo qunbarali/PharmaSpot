@@ -344,6 +344,18 @@ describe("invoice OCR text parsing", () => {
     expect(scored).toMatchObject({ confidence: 70, confidenceSource: "words", wordCount: 2 });
   });
 
+  test("ignores missing per-word confidence instead of treating it as zero", () => {
+    const scored = scoreOcrResult({
+      data: {
+        words: [
+          { text: "ABC", confidence: null, bbox: { x0: 0, x1: 20, y0: 0, y1: 10 } },
+          { text: "123", confidence: 70, bbox: { x0: 25, x1: 40, y0: 0, y1: 10 } }
+        ]
+      }
+    });
+    expect(scored).toMatchObject({ confidence: 70, confidenceSource: "words", wordCount: 2 });
+  });
+
   test("summarizes OCR confidence by word count across scanned PDF pages", () => {
     expect(summarizeExtraction({
       kind: "pdf", pageCount: 3, nativeTextPages: 1,
