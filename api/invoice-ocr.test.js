@@ -1,7 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, extractInvoice } = require("./invoice-ocr");
+const { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, scoreOcrResult, summarizeExtraction, extractInvoice } = require("./invoice-ocr");
 
 function createTextPdf(lines) {
   const escapePdfText = value => String(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
@@ -317,6 +317,54 @@ describe("invoice OCR text parsing", () => {
     expect(result.fields.invoiceTotal).toBeNull();
   });
 
+  test("reports measured Tesseract page confidence separately from parser confidence", () => {
+    const scored = scoreOcrResult({
+      data: {
+        text: "ABC DISTRIBUTORS INV 123",
+        confidence: 91.4,
+        words: [
+          { text: "ABC", confidence: 40, bbox: { x0: 0, x1: 20, y0: 0, y1: 10 } },
+          { text: "DISTRIBUTORS", confidence: 40, bbox: { x0: 25, x1: 90, y0: 0, y1: 10 } }
+        ]
+      }
+    });
+    expect(scored).toMatchObject({ confidence: 91.4, confidenceSource: "page", wordCount: 2 });
+    expect(parseInvoiceText("ABC DISTRIBUTORS\\nInvoice No: INV-123").fieldConfidence.supplier).toBe("medium");
+  });
+
+  test("falls back to mean word confidence when Tesseract page confidence is unavailable", () => {
+    const scored = scoreOcrResult({
+      data: {
+        words: [
+          { text: "ABC", confidence: 80, bbox: { x0: 0, x1: 20, y0: 0, y1: 10 } },
+          { text: "123", confidence: 60, bbox: { x0: 25, x1: 40, y0: 0, y1: 10 } }
+        ]
+      }
+    });
+    expect(scored).toMatchObject({ confidence: 70, confidenceSource: "words", wordCount: 2 });
+  });
+
+  test("summarizes OCR confidence by word count across scanned PDF pages", () => {
+    expect(summarizeExtraction({
+      kind: "pdf", pageCount: 3, nativeTextPages: 1,
+      ocrResults: [
+        { confidence: 90, confidenceSource: "page", wordCount: 2 },
+        { confidence: 60, confidenceSource: "words", wordCount: 1 }
+      ]
+    })).toMatchObject({
+      kind: "pdf", pageCount: 3, nativeTextPages: 1, ocrPages: 2,
+      ocrWordCount: 3, ocrConfidence: 80, ocrConfidenceBand: "medium",
+      ocrConfidenceSource: "page+words"
+    });
+  });
+
+  test("marks native-text PDFs separately from pages requiring OCR", () => {
+    expect(summarizeExtraction({ kind: "pdf", pageCount: 2, nativeTextPages: 2 })).toMatchObject({
+      kind: "pdf", pageCount: 2, nativeTextPages: 2, ocrPages: 0,
+      ocrConfidence: null, ocrConfidenceBand: null, ocrConfidenceSource: "unavailable"
+    });
+  });
+
   test("normalizes OCR whitespace and bounds output", () => {
     expect(normalizeText("  ABC  \r\n\r\n\r\n  123  ")).toBe("ABC\n\n 123");
     expect(normalizeText("x".repeat(250000))).toHaveLength(200000);
@@ -525,6 +573,10 @@ describe("invoice OCR text parsing", () => {
         needsReview: true
       });
       expect(result.reviewRequired).toBe(true);
+      expect(result.extraction).toMatchObject({
+        kind: "pdf", pageCount: 1, nativeTextPages: 1, ocrPages: 0,
+        ocrConfidence: null
+      });
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
