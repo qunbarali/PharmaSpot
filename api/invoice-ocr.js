@@ -671,7 +671,9 @@ function scoreOcrResult(result) {
   const rawConfidence = data.confidence;
   const pageConfidence = rawConfidence == null || rawConfidence === "" ? NaN : Number(rawConfidence);
   const words = Array.isArray(data.words) ? data.words : [];
-  const wordConfidences = words.map(word => Number(word && word.confidence))
+  const wordConfidences = words
+    .filter(word => String(word && word.text || "").trim())
+    .map(word => Number(word && word.confidence))
     .filter(value => Number.isFinite(value) && value >= 0 && value <= 100);
   const wordConfidence = wordConfidences.length
     ? wordConfidences.reduce((sum, value) => sum + value, 0) / wordConfidences.length
@@ -942,7 +944,7 @@ async function extractPdf(filePath) {
             context.fillRect(0, 0, width, height);
             await page.render({ canvasContext: context, viewport }).promise;
             const recognized = await recognizeCanvasWithRotation(canvas, worker);
-            if (recognized.text) ocrResults.push(recognized);
+            ocrResults.push(recognized);
             pageText = normalizeText([nativeText, recognized.text].filter(Boolean).join("\n"));
           } finally {
             canvas.width = 0;
