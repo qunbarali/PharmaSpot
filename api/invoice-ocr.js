@@ -695,6 +695,7 @@ function scoreOcrResult(result) {
   };
 }
 
+// Display-only guidance bands; they never block draft creation or stock approval.
 function confidenceBand(confidence) {
   if (!Number.isFinite(confidence)) return null;
   if (confidence >= 85) return "high";
