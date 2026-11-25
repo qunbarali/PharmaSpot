@@ -673,7 +673,7 @@ function scoreOcrResult(result) {
   const words = Array.isArray(data.words) ? data.words : [];
   const wordConfidences = words
     .filter(word => String(word && word.text || "").trim())
-    .map(word => Number(word && word.confidence))
+    .map(word => word && word.confidence != null && word.confidence !== "" ? Number(word.confidence) : NaN)
     .filter(value => Number.isFinite(value) && value >= 0 && value <= 100);
   const wordConfidence = wordConfidences.length
     ? wordConfidences.reduce((sum, value) => sum + value, 0) / wordConfidences.length
