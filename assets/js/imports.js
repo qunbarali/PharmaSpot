@@ -149,7 +149,7 @@ function runInvoiceOcr(files) {
         }
         if (extractionMessage) {
           body.append($('<p class="small text-info"></p>').text(
-            extractionMessage + " This is page/document-level OCR engine confidence, not a guarantee that individual invoice fields are correct."
+            extractionMessage + " This is page/document-level OCR engine confidence, not a guarantee that individual invoice fields are correct. The confidence band is guidance only and never replaces manual review."
           ));
         }
         const reviewSummary = result.reviewSummary || {};
