@@ -329,7 +329,7 @@ describe("invoice OCR text parsing", () => {
       }
     });
     expect(scored).toMatchObject({ confidence: 91.4, confidenceSource: "page", wordCount: 2 });
-    expect(parseInvoiceText("ABC DISTRIBUTORS\\nInvoice No: INV-123").fieldConfidence.supplier).toBe("medium");
+    expect(parseInvoiceText("ABC DISTRIBUTORS\nInvoice No: INV-123").fieldConfidence.supplier).toBe("medium");
   });
 
   test("falls back to mean word confidence when Tesseract page confidence is unavailable", () => {
