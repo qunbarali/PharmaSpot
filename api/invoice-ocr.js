@@ -668,16 +668,57 @@ function validateFile(filePath, extension) {
 function scoreOcrResult(result) {
   const text = ocrWordsToLines(result);
   const data = result && result.data ? result.data : {};
-  const confidence = Number(data.confidence);
-  const wordCount = Array.isArray(data.words)
-    ? data.words.filter(word => String(word && word.text || "").trim()).length
+  const rawConfidence = data.confidence;
+  const pageConfidence = rawConfidence == null || rawConfidence === "" ? NaN : Number(rawConfidence);
+  const words = Array.isArray(data.words) ? data.words : [];
+  const wordConfidences = words.map(word => Number(word && word.confidence))
+    .filter(value => Number.isFinite(value) && value >= 0 && value <= 100);
+  const wordConfidence = wordConfidences.length
+    ? wordConfidences.reduce((sum, value) => sum + value, 0) / wordConfidences.length
+    : NaN;
+  const confidence = Number.isFinite(pageConfidence) && pageConfidence >= 0 && pageConfidence <= 100
+    ? pageConfidence : (Number.isFinite(wordConfidence) ? wordConfidence : null);
+  const confidenceSource = Number.isFinite(pageConfidence) && pageConfidence >= 0 && pageConfidence <= 100
+    ? "page" : (Number.isFinite(wordConfidence) ? "words" : "unavailable");
+  const wordCount = words.length
+    ? words.filter(word => String(word && word.text || "").trim()).length
     : (text.match(/\S+/g) || []).length;
   const usefulTokens = (text.match(/[A-Za-z0-9]{2,}/g) || []).length;
   return {
     text,
-    confidence: Number.isFinite(confidence) ? confidence : 0,
+    confidence,
+    confidenceSource,
     wordCount,
-    score: (Number.isFinite(confidence) ? confidence : 0) + Math.min(usefulTokens, 80) * 0.08
+    score: (confidence == null ? 0 : confidence) + Math.min(usefulTokens, 80) * 0.08
+  };
+}
+
+function confidenceBand(confidence) {
+  if (!Number.isFinite(confidence)) return null;
+  if (confidence >= 85) return "high";
+  if (confidence >= 65) return "medium";
+  return "low";
+}
+
+function summarizeExtraction({ kind, pageCount = 1, nativeTextPages = 0, ocrResults = [] } = {}) {
+  const results = Array.isArray(ocrResults) ? ocrResults : [];
+  const measured = results.filter(result => Number.isFinite(result && result.confidence) &&
+    result.confidence >= 0 && result.confidence <= 100);
+  const weights = measured.map(result => Math.max(1, Number(result.wordCount) || 0));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const confidence = totalWeight
+    ? measured.reduce((sum, result, index) => sum + result.confidence * weights[index], 0) / totalWeight
+    : null;
+  const methods = Array.from(new Set(measured.map(result => result.confidenceSource).filter(Boolean)));
+  return {
+    kind: String(kind || "unknown"),
+    pageCount: Math.max(0, Number(pageCount) || 0),
+    nativeTextPages: Math.max(0, Number(nativeTextPages) || 0),
+    ocrPages: results.length,
+    ocrWordCount: results.reduce((sum, result) => sum + Math.max(0, Number(result && result.wordCount) || 0), 0),
+    ocrConfidence: confidence == null ? null : Math.round(confidence * 10) / 10,
+    ocrConfidenceBand: confidenceBand(confidence),
+    ocrConfidenceSource: methods.length ? methods.join("+") : "unavailable"
   };
 }
 
@@ -704,6 +745,7 @@ async function recognizeCanvasWithRotation(canvas, worker) {
   enhanceCanvasForOcr(canvas);
   const { createCanvas } = require("@napi-rs/canvas");
   let best = null;
+  let bestRotation = null;
   for (const rotation of [0, 90, 270, 180]) {
     let target = canvas;
     let temporary = false;
@@ -720,8 +762,11 @@ async function recognizeCanvasWithRotation(canvas, worker) {
     try {
       const result = await worker.recognize(target.toBuffer("image/png"));
       const candidate = scoreOcrResult(result);
-      if (!best || candidate.score > best.score) best = candidate;
-      if (candidate.confidence >= 93 && candidate.wordCount >= 12) return candidate.text;
+      if (!best || candidate.score > best.score) {
+        best = candidate;
+        bestRotation = rotation;
+      }
+      if (candidate.confidence >= 93 && candidate.wordCount >= 12) return { ...candidate, rotation };
     } finally {
       if (temporary) {
         target.width = 0;
@@ -729,7 +774,9 @@ async function recognizeCanvasWithRotation(canvas, worker) {
       }
     }
   }
-  return best ? best.text : "";
+  return best ? { ...best, rotation: bestRotation } : {
+    text: "", confidence: null, confidenceSource: "unavailable", wordCount: 0, score: 0, rotation: null
+  };
 }
 
 function readWebpDimensions(buffer) {
@@ -830,7 +877,11 @@ async function recognizeImageBuffer(buffer, maxPixels) {
   context.drawImage(image, 0, 0, image.width, image.height);
   const worker = await createOcrWorker();
   try {
-    return await recognizeCanvasWithRotation(canvas, worker);
+    const recognized = await recognizeCanvasWithRotation(canvas, worker);
+    return {
+      text: recognized.text,
+      extraction: summarizeExtraction({ kind: "image-ocr", pageCount: 1, ocrResults: [recognized] })
+    };
   } finally {
     canvas.width = 0;
     canvas.height = 0;
@@ -861,12 +912,15 @@ async function extractPdf(filePath) {
     pdfDocument = await loadingTask.promise;
     if (!pdfDocument.numPages || pdfDocument.numPages > MAX_PDF_PAGES) throw new Error("PDF must contain between 1 and 30 pages.");
     const pageTexts = [];
+    const ocrResults = [];
+    let nativeTextPages = 0;
     for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
       const page = await pdfDocument.getPage(pageNumber);
       try {
         const content = await page.getTextContent();
         const items = (content.items || []).filter(item => item && typeof item.str === "string" && item.str.trim());
         const nativeText = normalizeText(textItemsToLines(items));
+        if (nativeText) nativeTextPages += 1;
         const hasRotatedText = items.some(item => {
           const transform = Array.isArray(item.transform) ? item.transform : [];
           return Math.abs(Number(transform[1]) || 0) > 0.75 || Math.abs(Number(transform[2]) || 0) > 0.75;
@@ -887,8 +941,9 @@ async function extractPdf(filePath) {
             context.fillStyle = "#ffffff";
             context.fillRect(0, 0, width, height);
             await page.render({ canvasContext: context, viewport }).promise;
-            const recognizedText = await recognizeCanvasWithRotation(canvas, worker);
-            pageText = normalizeText([nativeText, recognizedText].filter(Boolean).join("\n"));
+            const recognized = await recognizeCanvasWithRotation(canvas, worker);
+            if (recognized.text) ocrResults.push(recognized);
+            pageText = normalizeText([nativeText, recognized.text].filter(Boolean).join("\n"));
           } finally {
             canvas.width = 0;
             canvas.height = 0;
@@ -902,7 +957,15 @@ async function extractPdf(filePath) {
     }
     const text = normalizeText(pageTexts.join("\n\n"));
     if (!text) throw new Error("No readable text was detected in the PDF. Try a clearer scan or upload page images.");
-    return text;
+    return {
+      text,
+      extraction: summarizeExtraction({
+        kind: "pdf",
+        pageCount: pdfDocument.numPages,
+        nativeTextPages,
+        ocrResults
+      })
+    };
   } catch (error) {
     if (error && /between 1 and 30|safe OCR rendering size|No readable text|invalid file signature/.test(error.message)) throw error;
     throw new Error("PDF extraction failed. Check the PDF file and the locked PDF/OCR dependencies: " + (error.message || "unknown error"));
@@ -922,9 +985,17 @@ async function extractInvoice(filePath) {
   const extension = path.extname(String(filePath || "")).toLowerCase();
   if (![".pdf", ".jpg", ".jpeg", ".png", ".webp"].includes(extension)) throw new Error("Unsupported invoice file. Use PDF, JPG, JPEG, PNG or WEBP.");
   validateFile(filePath, extension);
-  const text = extension === ".pdf" ? await extractPdf(filePath) : await extractImage(filePath, extension);
+  const extracted = extension === ".pdf" ? await extractPdf(filePath) : await extractImage(filePath, extension);
+  const text = typeof extracted === "string" ? extracted : extracted.text;
   if (!text) throw new Error("No readable invoice text was detected.");
-  return parseInvoiceText(text);
+  return {
+    ...parseInvoiceText(text),
+    extraction: extracted.extraction || summarizeExtraction({ kind: extension === ".pdf" ? "pdf" : "image-ocr" })
+  };
 }
 
-module.exports = { normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText, textItemsToLines, ocrWordsToLines, enhanceCanvasForOcr, validateInvoiceFile: validateFile, extractInvoice };
+module.exports = {
+  normalizeText, normalizeDate, parseInvoiceText, hasStructuredInvoiceText,
+  textItemsToLines, ocrWordsToLines, scoreOcrResult, summarizeExtraction,
+  enhanceCanvasForOcr, validateInvoiceFile: validateFile, extractInvoice
+};
