@@ -544,6 +544,21 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   expect(correctedReversal.status).toBe(200);
   expect((await findOne(inventoryDB, { _id: productId })).quantity).toBe(10);
 
+  const identityMoveDraft = await request("POST", "/imports/commit-purchase", makePurchase("INV-IDENTITY-OLD"));
+  expect(identityMoveDraft.status).toBe(201);
+  const identityMoveUpdate = await request("POST", "/imports/update-purchase-draft/" + encodeURIComponent(identityMoveDraft.data.draftId), {
+    ...makePurchase("INV-IDENTITY-NEW"), expectedRevision: 0
+  });
+  expect(identityMoveUpdate.status).toBe(200);
+  const releasedOldIdentity = await importsAPI.reserveInvoiceIdentity("Demo Distributor", "INV-IDENTITY-OLD", "invoice-identity-probe-old");
+  expect(releasedOldIdentity.created).toBe(true);
+  await new Promise((resolve, reject) => importsAPI.releaseInvoiceIdentity(
+    releasedOldIdentity.key, releasedOldIdentity.ownerId, error => error ? reject(error) : resolve()
+  ));
+  await expect(importsAPI.reserveInvoiceIdentity(
+    "Demo Distributor", "INV-IDENTITY-NEW", "invoice-identity-probe-new"
+  )).rejects.toMatchObject({ code: "duplicate_invoice_identity" });
+
   const usdDraft = await request("POST", "/imports/commit-purchase", {
     supplier: "Demo Distributor", supplierIdentifier: "SUP-007", invoiceNo: "INV-USD-003",
     invoiceDate: "2026-11-17", currency: "USD", baseCurrency: "PKR", exchangeRate: 280,
