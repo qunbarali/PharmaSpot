@@ -948,9 +948,9 @@ app.get("/history", async (req, res) => {
   try {
     const admin = await authorizeAdmin(req);
     if (!admin) return res.status(403).json({ error: "An active administrator account is required to view import history." });
-    importsDB.find({ type: { $ne: "source_file_lock" } }).sort({ createdAt: -1 }).limit(100).exec((err, docs) => {
+    importsDB.find({ type: { $ne: "source_file_lock" }, invoiceIdentityKey: { $exists: false } }).sort({ createdAt: -1 }).limit(100).exec((err, docs) => {
       if (err) return res.status(500).json({ error: "Could not load import history." });
-      res.json((docs || []).filter(record => record.type !== "invoice_identity_lock"));
+      res.json(docs || []);
     });
   } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
