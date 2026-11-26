@@ -170,6 +170,20 @@ test("purchase approval, controlled reversal, supplier payment, reconciliation a
   await expect(importsAPI.reserveSourceFileHashes([
     { sha256: "b".repeat(64) }, { sha256: "b".repeat(64) }
   ], "hash-lock-duplicate")).rejects.toMatchObject({ code: "duplicate_source_file" });
+
+  const concurrentInvoiceReservations = await Promise.allSettled([
+    importsAPI.reserveInvoiceIdentity("Race Distributor", "INV-LOCK-001", "invoice-lock-owner-a"),
+    importsAPI.reserveInvoiceIdentity(" race   distributor ", "inv-lock-001", "invoice-lock-owner-b")
+  ]);
+  expect(concurrentInvoiceReservations.filter(result => result.status === "fulfilled")).toHaveLength(1);
+  expect(concurrentInvoiceReservations.filter(result => result.status === "rejected" && result.reason.code === "duplicate_invoice_identity")).toHaveLength(1);
+  const activeInvoiceReservation = concurrentInvoiceReservations.find(result => result.status === "fulfilled").value;
+  const historyWithInvoiceLock = await request("GET", "/imports/history");
+  expect(historyWithInvoiceLock.data.some(record => record.type === "invoice_identity_lock")).toBe(false);
+  await new Promise((resolve, reject) => importsAPI.releaseInvoiceIdentity(
+    activeInvoiceReservation.key, activeInvoiceReservation.ownerId,
+    error => error ? reject(error) : resolve()
+  ));
   expect((await request("POST", "/imports/upload", {}, null)).status).toBe(401);
   expect((await request("POST", "/imports/ocr/not-a-file.pdf", undefined, null)).status).toBe(401);
   expect((await request("POST", "/imports/assign-image", { productId, storedName: "not-a-file.jpg" }, null)).status).toBe(401);
