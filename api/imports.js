@@ -27,6 +27,7 @@ const importsDB = new Datastore({
 importsDB.ensureIndex({ fieldName: "importKey", unique: true, sparse: true });
 importsDB.ensureIndex({ fieldName: "draftKey", unique: true, sparse: true });
 importsDB.ensureIndex({ fieldName: "sourceHashKey", unique: true, sparse: true });
+importsDB.ensureIndex({ fieldName: "invoiceIdentityKey", unique: true, sparse: true });
 
 const allowed = new Set([".pdf", ".zip", ".jpg", ".jpeg", ".png", ".webp"]);
 const storage = multer.diskStorage({
@@ -180,6 +181,61 @@ function reserveSourceFileHashes(sourceFiles, ownerId) {
 function releaseSourceFileHashes(reservationId, callback) {
   if (!reservationId) return callback(null, 0);
   importsDB.remove({ type: "source_file_lock", reservationId: String(reservationId) }, { multi: true }, callback);
+}
+
+function cleanupOrphanedInvoiceIdentityLocks() {
+  const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  return new Promise((resolve, reject) => {
+    importsDB.find({ type: "invoice_identity_lock", createdAt: { $lt: cutoff } }, (findError, locks) => {
+      if (findError) return reject(findError);
+      async.eachSeries(locks || [], (lock, next) => {
+        importsDB.findOne({ _id: lock.ownerId }, (ownerError, owner) => {
+          if (ownerError) return next(ownerError);
+          if (owner) return next();
+          importsDB.remove({ _id: lock._id, type: "invoice_identity_lock" }, {}, removeError => next(removeError || null));
+        });
+      }, error => error ? reject(error) : resolve());
+    });
+  });
+}
+
+function reserveInvoiceIdentity(supplier, invoiceNo, ownerId) {
+  let key;
+  try { key = normalizeInvoiceKey(supplier, invoiceNo); }
+  catch (error) { return Promise.reject(error); }
+  const owner = String(ownerId || crypto.randomUUID());
+  return cleanupOrphanedInvoiceIdentityLocks().then(() => new Promise((resolve, reject) => {
+    importsDB.findOne({ type: "invoice_identity_lock", invoiceIdentityKey: key }, (findError, existing) => {
+      if (findError) return reject(findError);
+      if (existing) {
+        if (String(existing.ownerId) === owner) return resolve({ key, ownerId: owner, created: false });
+        const duplicate = new Error("A draft or import already reserves this supplier and invoice number.");
+        duplicate.code = "duplicate_invoice_identity";
+        return reject(duplicate);
+      }
+      importsDB.insert({
+        type: "invoice_identity_lock",
+        invoiceIdentityKey: key,
+        ownerId: owner,
+        createdAt: new Date().toISOString()
+      }, error => {
+        if (error) {
+          if (error.errorType === "uniqueViolated") error.code = "duplicate_invoice_identity";
+          return reject(error);
+        }
+        resolve({ key, ownerId: owner, created: true });
+      });
+    });
+  }));
+}
+
+function releaseInvoiceIdentity(key, ownerId, callback) {
+  if (!key || !ownerId) return callback(null, 0);
+  importsDB.remove({
+    type: "invoice_identity_lock",
+    invoiceIdentityKey: String(key),
+    ownerId: String(ownerId)
+  }, {}, callback);
 }
 
 // Importing supplier documents and changing stock is restricted to the local app host.
@@ -552,16 +608,25 @@ app.post("/commit-purchase", async (req, res) => {
     }
     return res.status(500).json({ error: "Could not reserve the original invoice files safely." });
   }
+  let invoiceIdentityReservation;
+  try {
+    invoiceIdentityReservation = await reserveInvoiceIdentity(supplier, invoiceNo, draftId);
+  } catch (error) {
+    return releaseSourceFileHashes(sourceReservation.reservationId, () => {
+      if (error && error.code === "duplicate_invoice_identity") return res.status(409).json({ error: "A draft or import already reserves this supplier and invoice number." });
+      return res.status(500).json({ error: "Could not reserve this supplier invoice identity safely." });
+    });
+  }
   importsDB.insert({
     _id: draftId,
     type: "purchase_draft", status: "audit_pending", draftKey, supplier, supplierIdentifier, invoiceNo, invoiceDate,
     currency, baseCurrency, exchangeRate, exchangeRateDate, items, invoiceTotal, sourceFiles, revision: 0,
     createdAt: new Date().toISOString()
   }, (err, draft) => {
-    if (err) return releaseSourceFileHashes(sourceReservation.reservationId, () => {
+    if (err) return releaseInvoiceIdentity(draftKey, draftId, () => releaseSourceFileHashes(sourceReservation.reservationId, () => {
       if (err.errorType === "uniqueViolated") return res.status(409).json({ error: "A draft or posted purchase already exists for this supplier invoice." });
       return res.status(500).json({ error: "Could not save purchase for approval." });
-    });
+    }));
     writeAudit(req, "purchase_draft_created", "purchase_draft", draft._id, {
       supplier, supplierIdentifier, invoiceNo, invoiceDate, currency, baseCurrency, exchangeRate, exchangeRateDate,
       lineCount: items.length,
@@ -623,6 +688,15 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
       draftId: draftDuplicate._id
     });
 
+    const previousDraftKey = normalizeInvoiceKey(draft.supplier, draft.invoiceNo);
+    let invoiceIdentityReservation;
+    try {
+      invoiceIdentityReservation = await reserveInvoiceIdentity(validated.supplier, validated.invoiceNo, draft._id);
+    } catch (error) {
+      if (error && error.code === "duplicate_invoice_identity") return res.status(409).json({ error: "Another draft or import already reserves this supplier and invoice number. The draft was not changed." });
+      return res.status(500).json({ error: "Could not reserve the corrected supplier invoice identity." });
+    }
+
     const updatedAt = new Date().toISOString();
     const changes = {
       ...validated,
@@ -636,14 +710,33 @@ app.post("/update-purchase-draft/:draftId", async (req, res) => {
     };
     const updateSelector = { _id: draft._id, type: "purchase_draft", status: "pending_approval" };
     updateSelector.revision = draft.revision == null ? { $exists: false } : draft.revision;
-    const count = await new Promise((resolve, reject) =>
-      importsDB.update(
-        updateSelector,
-        { $set: changes }, {},
-        (error, updated) => error ? reject(error) : resolve(updated)
-      )
-    );
-    if (!count) return res.status(409).json({ error: "The draft changed state while it was being edited. Reload pending purchases before trying again." });
+    let count;
+    try {
+      count = await new Promise((resolve, reject) =>
+        importsDB.update(
+          updateSelector,
+          { $set: changes }, {},
+          (error, updated) => error ? reject(error) : resolve(updated)
+        )
+      );
+    } catch (error) {
+      if (invoiceIdentityReservation.created) await new Promise(resolve =>
+        releaseInvoiceIdentity(invoiceIdentityReservation.key, draft._id, () => resolve())
+      );
+      throw error;
+    }
+    if (!count) {
+      if (invoiceIdentityReservation.created) await new Promise(resolve =>
+        releaseInvoiceIdentity(invoiceIdentityReservation.key, draft._id, () => resolve())
+      );
+      return res.status(409).json({ error: "The draft changed state while it was being edited. Reload pending purchases before trying again." });
+    }
+    if (previousDraftKey !== draftKey) {
+      await new Promise(resolve => releaseInvoiceIdentity(previousDraftKey, draft._id, error => {
+        if (error) console.error("Could not release previous invoice identity reservation", previousDraftKey, error);
+        resolve();
+      }));
+    }
 
     try {
       await writeAudit(req, "purchase_draft_updated", "purchase_draft", draft._id, {
@@ -706,11 +799,16 @@ app.post("/approve-purchase/:draftId", async (req, res) => {
   const admin = await authorizeAdmin(req);
   if (!admin) return res.status(403).json({ error: "An active administrator account is required to approve purchases." });
   if (!req.body || req.body.confirm !== true || req.body.reviewed !== true) return res.status(400).json({ error: "Review every supplier, invoice, currency and batch field, then provide explicit review and approval confirmation." });
-  importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" }, (err, draft) => {
+  importsDB.findOne({ _id: req.params.draftId, type: "purchase_draft", status: "pending_approval" }, async (err, draft) => {
     if (err) return res.status(500).json({ error: "Could not load purchase draft." });
     if (!draft) return res.status(404).json({ error: "Pending purchase draft not found or already processed." });
     const reviewedRevisionRaw = req.body.reviewedRevision;
     if (reviewedRevisionRaw == null || reviewedRevisionRaw === "" || !Number.isSafeInteger(Number(reviewedRevisionRaw)) || Number(reviewedRevisionRaw) !== Number(draft.revision || 0)) return res.status(409).json({ error: "This draft has changed since it was reviewed. Reload it and review every field again before approval." });
+    try {
+      await reserveInvoiceIdentity(draft.supplier, draft.invoiceNo, draft._id);
+    } catch (error) {
+      return res.status(409).json({ error: "This supplier invoice identity is already reserved by another draft or import. Stock was not changed." });
+    }
     const approvalSelector = { _id: draft._id, status: "pending_approval" };
     approvalSelector.revision = draft.revision == null ? { $exists: false } : draft.revision;
     importsDB.update(approvalSelector, { $set: { status: "approving", approvedAt: new Date().toISOString() } }, {}, (updateError, count) => {
@@ -852,7 +950,7 @@ app.get("/history", async (req, res) => {
     if (!admin) return res.status(403).json({ error: "An active administrator account is required to view import history." });
     importsDB.find({ type: { $ne: "source_file_lock" } }).sort({ createdAt: -1 }).limit(100).exec((err, docs) => {
       if (err) return res.status(500).json({ error: "Could not load import history." });
-      res.json(docs || []);
+      res.json((docs || []).filter(record => record.type !== "invoice_identity_lock"));
     });
   } catch (_) { res.status(500).json({ error: "Could not verify administrator session." }); }
 });
@@ -860,5 +958,7 @@ app.get("/history", async (req, res) => {
 app.isSafeArchiveEntryPath = isSafeArchiveEntryPath;
 app.reserveSourceFileHashes = reserveSourceFileHashes;
 app.releaseSourceFileHashes = releaseSourceFileHashes;
+app.reserveInvoiceIdentity = reserveInvoiceIdentity;
+app.releaseInvoiceIdentity = releaseInvoiceIdentity;
 
 module.exports = app;
