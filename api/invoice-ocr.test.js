@@ -111,6 +111,41 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("retains an aligned table row even when OCR misses every numeric cell", () => {
+    const result = parseInvoiceText([
+      "Supplier Name: SDK Health Care",
+      "Item | Description | Qty | TP | MRP | Batch | Expiry",
+      "1 | Vitamin C 500mg | | | | |"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      description: "Vitamin C 500mg",
+      quantity: null,
+      purchasePrice: null,
+      salePrice: null,
+      reviewFlags: expect.arrayContaining([
+        "paid quantity", "purchase price", "sale price", "batch number", "valid expiry date"
+      ])
+    });
+  });
+
+  test("retains explicitly labelled rows when OCR reads the field labels but misses their values", () => {
+    const result = parseInvoiceText([
+      "Supplier Name: SDK Health Care",
+      "Product: Vitamin C 500mg; Qty: ; Purchase Price: ; Sale Price: ; Batch: ; Expiry:"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      productName: "Vitamin C 500mg",
+      quantity: null,
+      purchasePrice: null,
+      salePrice: null,
+      reviewFlags: expect.arrayContaining(["paid quantity", "purchase price", "sale price"])
+    });
+  });
+
   test("does not turn a product label without line data into a purchase row", () => {
     const result = parseInvoiceText("Supplier Name: Ahsan Traders\nProduct: Cetirizine 10mg");
     expect(result.rows).toHaveLength(0);
