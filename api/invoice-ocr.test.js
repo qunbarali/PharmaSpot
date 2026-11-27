@@ -67,6 +67,55 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("retains incomplete table rows so missing paid quantity and purchase price can be corrected", () => {
+    const result = parseInvoiceText([
+      "Crescent Distributors",
+      "Item | Description | Qty | TP | MRP | Batch | Expiry",
+      "1 | Amoxicillin 500mg | | | 25.00 | B-10 | 12/2027"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      description: "Amoxicillin 500mg",
+      quantity: null,
+      paidQuantity: null,
+      purchasePrice: null,
+      salePrice: 25,
+      batchNumber: "B-10",
+      expiryDate: "2027-12-31",
+      reviewFlags: expect.arrayContaining(["paid quantity", "purchase price"])
+    });
+    expect(result.rows[0].fieldConfidence).toMatchObject({
+      quantity: "none",
+      purchasePrice: "none",
+      salePrice: "medium"
+    });
+    expect(result.reviewSummary.rowsNeedingReview).toBe(1);
+  });
+
+  test("retains labelled product rows when required values are missing", () => {
+    const result = parseInvoiceText([
+      "Supplier Name: Ahsan Traders",
+      "Product: Cetirizine 10mg; Sale Price: 35; Batch: C-10; Expiry: 11/2028"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      productName: "Cetirizine 10mg",
+      quantity: null,
+      purchasePrice: null,
+      salePrice: 35,
+      batchNumber: "C-10",
+      expiryDate: "2028-11-30",
+      reviewFlags: expect.arrayContaining(["paid quantity", "purchase price"])
+    });
+  });
+
+  test("does not turn a product label without line data into a purchase row", () => {
+    const result = parseInvoiceText("Supplier Name: Ahsan Traders\nProduct: Cetirizine 10mg");
+    expect(result.rows).toHaveLength(0);
+  });
+
   test("does not flag complete supplier and batch fields as missing", () => {
     const result = parseInvoiceText([
       "ABC DISTRIBUTORS",
