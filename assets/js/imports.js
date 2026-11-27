@@ -169,7 +169,7 @@ function runInvoiceOcr(files) {
           body.append($('<p class="text-warning"></p>').text(
             "Review checklist — required invoice fields missing: " + (missingInvoiceFields.join(", ") || "none") +
             "; optional metadata not detected: " + (optionalInvoiceFields.join(", ") || "none") +
-            "; product rows with missing/invalid paid quantity, purchase price, sale price, batch or expiry: " + rowsNeedingReview +
+            "; product rows with missing/invalid product name, paid quantity, purchase price, sale price, batch or expiry: " + rowsNeedingReview +
             ". Check the original document before approval."
           ));
         } else {
