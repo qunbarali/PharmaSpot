@@ -146,6 +146,41 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("retains a table row with unreadable product description for manual product selection", () => {
+    const result = parseInvoiceText([
+      "SDK Health Care",
+      "Item | Description | Qty | TP | MRP | Batch | Expiry",
+      "1 | | 10 | 12.50 | 20.00 | B-01 | 12/2027"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      description: "",
+      productName: "",
+      quantity: 10,
+      purchasePrice: 12.5,
+      salePrice: 20,
+      reviewFlags: expect.arrayContaining(["product name"]),
+      fieldConfidence: { productName: "none" }
+    });
+  });
+
+  test("retains labelled quantity and prices when the product name is unreadable", () => {
+    const result = parseInvoiceText([
+      "Supplier Name: SDK Health Care",
+      "Qty: 10; Purchase Price: 12.50; Sale Price: 20; Batch: B-01; Expiry: 12/2027"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      productName: "",
+      quantity: 10,
+      purchasePrice: 12.5,
+      salePrice: 20,
+      reviewFlags: expect.arrayContaining(["product name"])
+    });
+  });
+
   test("does not turn a product label without line data into a purchase row", () => {
     const result = parseInvoiceText("Supplier Name: Ahsan Traders\nProduct: Cetirizine 10mg");
     expect(result.rows).toHaveLength(0);
