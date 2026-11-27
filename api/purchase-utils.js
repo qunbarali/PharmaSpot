@@ -173,6 +173,10 @@ function validatePurchaseDraft(input) {
     throw new Error("A purchase must contain between 1 and 500 valid invoice lines.");
   }
   const normalizedItems = items.map(item => {
+    const hasValue = value => value != null && !(typeof value === "string" && !value.trim());
+    if (!hasValue(item.purchasePrice) || !hasValue(item.salePrice)) {
+      throw new Error("Every invoice line needs an explicitly reviewed purchase price and sale price; blank values cannot be treated as zero.");
+    }
     const quantity = Number(item.quantity);
     const paidQuantity = Number(item.paidQuantity == null || item.paidQuantity === "" ? quantity : item.paidQuantity);
     const purchasePrice = Number(item.purchasePrice);
