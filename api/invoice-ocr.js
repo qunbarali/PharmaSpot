@@ -230,8 +230,8 @@ function makeRow(description, values) {
 
 function parseLabeledRow(line) {
   const description = getLabeledValue(line, [/(?:product|item|description)\s*[:=]\s*([^;|]+)/i]);
-  if (!description || isInvoiceMetadataLine(line) ||
-      !/(?:qty|quantity|purchase\s*price|cost\s*price|unit\s*price|rate|sale\s*price|retail\s*price|mrp|batch|lot|exp(?:iry|y)?|use\s*by|best\s*before)\s*[:=]/i.test(line)) return null;
+  if (!description || /^\s*(?:supplier|vendor|distributor|invoice|bill|ntn|gstin|tax\s*id)\b/i.test(line) ||
+      !/(?:qty|quantity|bonus|free|foc|purchase\s*price|cost\s*price|unit\s*price|rate|sale\s*price|retail\s*price|mrp|batch|lot|exp(?:iry|y)?|use\s*by|best\s*before)\s*[:=]/i.test(line)) return null;
   const quantity = parseNumber(getLabeledValue(line, [/(?:qty|quantity)\s*[:=]\s*([\d,.]+)/i]));
   const purchasePrice = parseNumber(getLabeledValue(line, [/(?:purchase\s*price|cost\s*price|unit\s*price|rate|purchase|cost)\s*[:=]\s*([\d,.]+)/i]));
   const salePrice = parseNumber(getLabeledValue(line, [/(?:sale\s*price|retail\s*price|mrp|sale)\s*[:=]\s*([\d,.]+)/i]));
