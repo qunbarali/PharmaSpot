@@ -186,7 +186,8 @@ function makeRow(description, values) {
     bonusQuantity > 0 ? bonusQuantity : null, grossAmount, discountPercent, discountAmount,
     salesTaxPercent, salesTaxAmount, additionalTaxAmount
   ].some(value => value != null && String(value).trim() !== "");
-  if (!productName || !hasRowData) return null;
+  const hasExplicitRowLabel = /(?:qty|quantity|bonus|free|foc|purchase\s*price|cost\s*price|unit\s*price|rate|sale\s*price|retail\s*price|mrp|batch|lot|exp(?:iry|y)?|use\s*by|best\s*before)\s*[:=]/i.test(rawLine);
+  if (!productName || (!hasRowData && !hasExplicitRowLabel && !values.allowEmptyFields)) return null;
   // This is structural parser confidence (labeled/table vs loose row), not Tesseract word confidence.
   const sourceConfidence = values.confidence || "low";
   const reviewFlags = [];
@@ -302,7 +303,7 @@ function parseDelimitedRow(line, header) {
     get(salesTaxIndex), ...additionalTaxIndexes.map(get), get(totalIndex),
     get(batchIndex), get(expiryIndex), get(itemCodeIndex)
   ].some(value => String(value == null ? "" : value).trim() !== "");
-  if (!get(descriptionIndex) || !rowEvidence) return null;
+  if (!get(descriptionIndex) || (!rowEvidence && values.length !== columns.length)) return null;
   const quantity = parseNumber(get(quantityIndex));
   const purchasePrice = parseNumber(get(purchaseIndex));
   const salePrice = parseNumber(get(saleIndex));
@@ -325,7 +326,7 @@ function parseDelimitedRow(line, header) {
     additionalTaxAmount,
     netAmount: parseNumber(get(netIndex)),
     batchNumber: get(batchIndex), rawExpiry: expiryRaw, expiryDate,
-    confidence: "medium", rawLine: line
+    confidence: "medium", rawLine: line, allowEmptyFields: values.length === columns.length
   });
 }
 
