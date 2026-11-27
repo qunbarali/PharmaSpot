@@ -187,7 +187,7 @@ function makeRow(description, values) {
     salesTaxPercent, salesTaxAmount, additionalTaxAmount
   ].some(value => value != null && String(value).trim() !== "");
   const hasExplicitRowLabel = /(?:qty|quantity|bonus|free|foc|purchase\s*price|cost\s*price|unit\s*price|rate|sale\s*price|retail\s*price|mrp|batch|lot|exp(?:iry|y)?|use\s*by|best\s*before)\s*[:=]/i.test(rawLine);
-  if ((!productName && !hasRowData) || (!hasRowData && !hasExplicitRowLabel && !values.allowEmptyFields)) return null;
+  if ((!productName && !hasRowData && !hasExplicitRowLabel) || (!hasRowData && !hasExplicitRowLabel && !values.allowEmptyFields)) return null;
   // This is structural parser confidence (labeled/table vs loose row), not Tesseract word confidence.
   const sourceConfidence = values.confidence || "low";
   const reviewFlags = [];
