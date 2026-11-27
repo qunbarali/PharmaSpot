@@ -198,6 +198,35 @@ describe("purchase posting and reversal helpers", () => {
     })).toThrow(/positive paid quantity/i);
   });
 
+  test("blocks incomplete OCR rows until required purchase fields are corrected", () => {
+    const draft = {
+      supplier: "Main Distributor",
+      invoiceNo: "OCR-REVIEW-001",
+      currency: "PKR",
+      baseCurrency: "PKR",
+      exchangeRate: 1,
+      exchangeRateDate: "2026-11-27",
+      items: [{
+        productId: 5,
+        quantity: null,
+        purchasePrice: null,
+        salePrice: 15,
+        batchNumber: "OCR-B-1",
+        expiryDate: "2027-12-31"
+      }]
+    };
+
+    expect(() => validatePurchaseDraft(draft)).toThrow();
+    expect(() => validatePurchaseDraft({
+      ...draft,
+      items: [{ ...draft.items[0], quantity: 10 }]
+    })).toThrow();
+    expect(validatePurchaseDraft({
+      ...draft,
+      items: [{ ...draft.items[0], quantity: 10, purchasePrice: 12 }]
+    }).items[0]).toMatchObject({ quantity: 10, purchasePrice: 12 });
+  });
+
   test("rejects duplicate/invalid purchase fields, dates and exchange rates", () => {
     const valid = {
       supplier: "Main Distributor", invoiceNo: "INV-100", currency: "PKR",
