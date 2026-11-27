@@ -220,7 +220,11 @@ describe("purchase posting and reversal helpers", () => {
     expect(() => validatePurchaseDraft({
       ...draft,
       items: [{ ...draft.items[0], quantity: 10 }]
-    })).toThrow();
+    })).toThrow(/explicitly reviewed purchase price and sale price/i);
+    expect(() => validatePurchaseDraft({
+      ...draft,
+      items: [{ ...draft.items[0], quantity: 10, purchasePrice: 12, salePrice: null }]
+    })).toThrow(/explicitly reviewed purchase price and sale price/i);
     expect(validatePurchaseDraft({
       ...draft,
       items: [{ ...draft.items[0], quantity: 10, purchasePrice: 12 }]
