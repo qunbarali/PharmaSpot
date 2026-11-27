@@ -187,10 +187,11 @@ function makeRow(description, values) {
     salesTaxPercent, salesTaxAmount, additionalTaxAmount
   ].some(value => value != null && String(value).trim() !== "");
   const hasExplicitRowLabel = /(?:qty|quantity|bonus|free|foc|purchase\s*price|cost\s*price|unit\s*price|rate|sale\s*price|retail\s*price|mrp|batch|lot|exp(?:iry|y)?|use\s*by|best\s*before)\s*[:=]/i.test(rawLine);
-  if (!productName || (!hasRowData && !hasExplicitRowLabel && !values.allowEmptyFields)) return null;
+  if ((!productName && !hasRowData) || (!hasRowData && !hasExplicitRowLabel && !values.allowEmptyFields)) return null;
   // This is structural parser confidence (labeled/table vs loose row), not Tesseract word confidence.
   const sourceConfidence = values.confidence || "low";
   const reviewFlags = [];
+  if (!productName) reviewFlags.push("product name");
   if (quantity === null) reviewFlags.push("paid quantity");
   if (purchasePrice === null) reviewFlags.push("purchase price");
   if (salePrice === null) reviewFlags.push("sale price");
@@ -209,7 +210,7 @@ function makeRow(description, values) {
     batchNumber,
     rawExpiry, expiryDate,
     fieldConfidence: {
-      productName: sourceConfidence,
+      productName: productName ? sourceConfidence : "none",
       quantity: quantity === null ? "none" : sourceConfidence,
       purchasePrice: purchasePrice === null ? "none" : sourceConfidence,
       itemCode: itemCode ? sourceConfidence : "none",
@@ -231,7 +232,7 @@ function makeRow(description, values) {
 
 function parseLabeledRow(line) {
   const description = getLabeledValue(line, [/(?:product|item|description)\s*[:=]\s*([^;|]+)/i]);
-  if (!description || /^\s*(?:supplier|vendor|distributor|invoice|bill|ntn|gstin|tax\s*id)\b/i.test(line) ||
+  if (/^\s*(?:supplier|vendor|distributor|invoice|bill|ntn|gstin|tax\s*id)\b/i.test(line) ||
       !/(?:qty|quantity|bonus|free|foc|purchase\s*price|cost\s*price|unit\s*price|rate|sale\s*price|retail\s*price|mrp|batch|lot|exp(?:iry|y)?|use\s*by|best\s*before)\s*[:=]/i.test(line)) return null;
   const quantity = parseNumber(getLabeledValue(line, [/(?:qty|quantity)\s*[:=]\s*([\d,.]+)/i]));
   const purchasePrice = parseNumber(getLabeledValue(line, [/(?:purchase\s*price|cost\s*price|unit\s*price|rate|purchase|cost)\s*[:=]\s*([\d,.]+)/i]));
@@ -303,7 +304,7 @@ function parseDelimitedRow(line, header) {
     get(salesTaxIndex), ...additionalTaxIndexes.map(get), get(totalIndex),
     get(batchIndex), get(expiryIndex), get(itemCodeIndex)
   ].some(value => String(value == null ? "" : value).trim() !== "");
-  if (!get(descriptionIndex) || (!rowEvidence && values.length !== columns.length)) return null;
+  if ((!get(descriptionIndex) && !rowEvidence) || (!rowEvidence && values.length !== columns.length)) return null;
   const quantity = parseNumber(get(quantityIndex));
   const purchasePrice = parseNumber(get(purchaseIndex));
   const salePrice = parseNumber(get(saleIndex));
