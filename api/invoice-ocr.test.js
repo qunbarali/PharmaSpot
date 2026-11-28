@@ -423,6 +423,29 @@ describe("invoice OCR text parsing", () => {
     });
   });
 
+  test("parses South Asian lakh/crore and western thousands grouping in loose invoice rows", () => {
+    const result = parseInvoiceText([
+      "ABC DISTRIBUTORS",
+      "Item Description Qty TP MRP",
+      "Imported Vaccine 10 1,23,456.75 1,50,000.00",
+      "Specialty Injection 2 1,234,567.89 1,500,000.00"
+    ].join("\n"));
+
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows[0]).toMatchObject({
+      productName: "Imported Vaccine",
+      quantity: 10,
+      purchasePrice: 123456.75,
+      salePrice: 150000
+    });
+    expect(result.rows[1]).toMatchObject({
+      productName: "Specialty Injection",
+      quantity: 2,
+      purchasePrice: 1234567.89,
+      salePrice: 1500000
+    });
+  });
+
   test("attaches a separate batch and expiry continuation to its invoice row", () => {
     const result = parseInvoiceText([
       "ABC DISTRIBUTORS",
